@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Kuestenlogik.Bowire.Protocol.Amqp/Kuestenlogik.Bowire.Protocol.Amqp.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Kuestenlogik.Bowire.Protocol.Amqp.Tests/Kuestenlogik.Bowire.Protocol.Amqp.Tests.csproj" />
+  </Folder>
+  <Folder Name="/solution items/">
+    <File Path="README.md" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="nuget.config" />
+    <File Path="global.json" />
+  </Folder>
+</Solution>

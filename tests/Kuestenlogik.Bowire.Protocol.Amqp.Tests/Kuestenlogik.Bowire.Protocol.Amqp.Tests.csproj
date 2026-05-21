@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- CA1707: xUnit-idiomatic test names use snake_case to read
+         as sentences (`Subject_action_expectedResult`). xUnit1030:
+         ConfigureAwait(false) clashes with xUnit's parallelization
+         model — its analyzers explicitly want it omitted in test
+         bodies. Both rules fight project-wide TreatWarningsAsErrors;
+         scoped suppression keeps the policy strict everywhere else. -->
+    <NoWarn>$(NoWarn);CA1707;xUnit1030</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Kuestenlogik.Bowire.Protocol.Amqp\Kuestenlogik.Bowire.Protocol.Amqp.csproj" />
+  </ItemGroup>
+
+</Project>

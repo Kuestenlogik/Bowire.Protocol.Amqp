@@ -1,0 +1,29 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Bowire contract package — IBowireProtocol + IBowireMockEmitter
+         (the latter under Kuestenlogik.Bowire.Mocking). -->
+    <PackageVersion Include="Kuestenlogik.Bowire" Version="1.5.0" />
+
+    <!-- AMQP 0.9.1 wire (RabbitMQ, ActiveMQ Classic). The .NET-native
+         client published by the RabbitMQ team is the de-facto standard
+         for the 0.9.1 protocol; channel + exchange + routing-key
+         semantics flow through here. -->
+    <PackageVersion Include="RabbitMQ.Client" Version="7.1.2" />
+
+    <!-- AMQP 1.0 wire (Azure Service Bus, ActiveMQ Artemis, etc.).
+         Microsoft's AMQPNetLite is the long-standing, lightweight,
+         Microsoft-validated 1.0 stack — same wire format used by the
+         Azure SDK's internals. -->
+    <PackageVersion Include="AMQPNetLite" Version="2.4.11" />
+
+    <!-- Test-only -->
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.5.1" />
+    <PackageVersion Include="xunit.v3" Version="3.2.2" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.203" />
+  </ItemGroup>
+</Project>
