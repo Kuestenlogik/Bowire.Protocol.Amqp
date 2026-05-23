@@ -4,14 +4,11 @@
 namespace Kuestenlogik.Bowire.Protocol.Amqp.Tests;
 
 /// <summary>
-/// Skeleton-release coverage: the surface of <see cref="BowireAmqpProtocol"/>
-/// is fixed so embedded hosts and the AsyncAPI binding resolver can pin
-/// against it. Tests assert that identity / settings / icon shape look
-/// the way the 0.1.x release advertises, and that every IBowireProtocol
-/// method explicitly fails with <see cref="NotImplementedException"/> so
-/// nobody mistakes a silent no-op for a working implementation. Real
-/// behavioural tests (broker round-trips via Testcontainers) land
-/// alongside the 0.2.x discovery + invocation implementation.
+/// Coverage for the AMQP plugin's deterministic surface — identity,
+/// settings, channel contract, URL parsing, argument validation.
+/// Broker round-trips (RabbitMQ.Client → real RabbitMQ, AMQPNetLite →
+/// real Service Bus / Artemis) are integration tests; they live in a
+/// later pass when Testcontainers wiring lands.
 /// </summary>
 public sealed class BowireAmqpProtocolTests
 {
@@ -36,47 +33,20 @@ public sealed class BowireAmqpProtocolTests
     }
 
     [Fact]
-    public async Task DiscoverAsync_throws_NotImplementedException_in_skeleton()
+    public void Settings_expose_receiveTimeoutSeconds_default_30()
     {
         var protocol = new BowireAmqpProtocol();
-        var ct = TestContext.Current.CancellationToken;
-        await Assert.ThrowsAsync<NotImplementedException>(
-            () => protocol.DiscoverAsync("amqp://localhost:5672", showInternalServices: false, ct: ct));
-    }
+        var t = protocol.Settings.SingleOrDefault(s => s.Key == "receiveTimeoutSeconds");
 
-    [Fact]
-    public async Task InvokeAsync_throws_NotImplementedException_in_skeleton()
-    {
-        var protocol = new BowireAmqpProtocol();
-        var ct = TestContext.Current.CancellationToken;
-        await Assert.ThrowsAsync<NotImplementedException>(
-            () => protocol.InvokeAsync(
-                "amqp://localhost:5672", "exchange", "send",
-                jsonMessages: ["{}"], showInternalServices: false, ct: ct));
-    }
-
-    [Fact]
-    public async Task InvokeStreamAsync_throws_NotImplementedException_in_skeleton()
-    {
-        var protocol = new BowireAmqpProtocol();
-        var ct = TestContext.Current.CancellationToken;
-        await Assert.ThrowsAsync<NotImplementedException>(async () =>
-        {
-            await foreach (var _ in protocol.InvokeStreamAsync(
-                "amqp://localhost:5672", "exchange", "receive",
-                jsonMessages: [], showInternalServices: false, ct: ct).ConfigureAwait(false))
-            {
-                // Should never produce a value — the iterator throws
-                // before yielding anything.
-            }
-        }).ConfigureAwait(false);
+        Assert.NotNull(t);
+        Assert.Equal(30, t!.DefaultValue);
     }
 
     [Fact]
     public async Task OpenChannelAsync_returns_null_AMQP_uses_streaming_not_channels()
     {
         // AMQP doesn't map onto Bowire's WebSocket-style channel surface;
-        // the plugin will route streaming via InvokeStreamAsync. Returning
+        // the plugin routes streaming via InvokeStreamAsync. Returning
         // null here is the contract that lets the workbench fall through
         // to streaming UI instead of opening a phantom channel.
         var protocol = new BowireAmqpProtocol();
@@ -84,5 +54,40 @@ public sealed class BowireAmqpProtocolTests
         var channel = await protocol.OpenChannelAsync(
             "amqp://localhost:5672", "exchange", "receive", showInternalServices: false, ct: ct);
         Assert.Null(channel);
+    }
+
+    [Fact]
+    public async Task DiscoverAsync_rejects_invalid_scheme()
+    {
+        var protocol = new BowireAmqpProtocol();
+        var ct = TestContext.Current.CancellationToken;
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => protocol.DiscoverAsync("http://localhost:5672", showInternalServices: false, ct: ct));
+    }
+
+    [Fact]
+    public async Task InvokeAsync_rejects_invalid_scheme()
+    {
+        var protocol = new BowireAmqpProtocol();
+        var ct = TestContext.Current.CancellationToken;
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => protocol.InvokeAsync(
+                "kafka://localhost:9092", "exchange", "send",
+                jsonMessages: ["{}"], showInternalServices: false, ct: ct));
+    }
+
+    [Fact]
+    public async Task InvokeStreamAsync_rejects_invalid_scheme()
+    {
+        var protocol = new BowireAmqpProtocol();
+        var ct = TestContext.Current.CancellationToken;
+        await Assert.ThrowsAsync<ArgumentException>(async () =>
+        {
+            await foreach (var _ in protocol.InvokeStreamAsync(
+                "not-a-url", "q", "receive", jsonMessages: [],
+                showInternalServices: false, ct: ct).ConfigureAwait(false))
+            {
+            }
+        }).ConfigureAwait(false);
     }
 }

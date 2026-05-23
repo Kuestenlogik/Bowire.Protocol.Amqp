@@ -9,7 +9,7 @@
          model — its analyzers explicitly want it omitted in test
          bodies. Both rules fight project-wide TreatWarningsAsErrors;
          scoped suppression keeps the policy strict everywhere else. -->
-    <NoWarn>$(NoWarn);CA1707;xUnit1030</NoWarn>
+    <NoWarn>$(NoWarn);CA1707;xUnit1030;CA1054</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
