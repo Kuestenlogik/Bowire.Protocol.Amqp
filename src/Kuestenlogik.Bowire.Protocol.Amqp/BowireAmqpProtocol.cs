@@ -160,8 +160,11 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
         {
             var exchanges = await mgmt.GetExchangesAsync(ct).ConfigureAwait(false);
             var bindings = await mgmt.GetBindingsAsync(ct).ConfigureAwait(false);
+            var queues = await mgmt.GetQueuesAsync(ct).ConfigureAwait(false);
 
             var services = new List<BowireServiceInfo>();
+
+            // -------- Exchanges → publish (send) endpoints --------
             foreach (var ex in exchanges)
             {
                 // Skip the unnamed default exchange and the AMQP-reserved
@@ -191,6 +194,24 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
                     methods.Add(BuildSendMethod($"{SendMethodName}:{key}", ex.Name));
                 }
                 services.Add(new BowireServiceInfo(displayName, "amqp", methods));
+            }
+
+            // -------- Queues → consume (receive) endpoints --------
+            // The consumer surface lives on queues, not exchanges. Without
+            // this, the workbench could only publish into AMQP and never
+            // subscribe to anything — the half of the story most users
+            // come for.
+            foreach (var q in queues)
+            {
+                // RabbitMQ creates an `amq.gen-*` queue per anonymous
+                // subscriber; those are noise in the sidebar unless the
+                // operator opted in via showInternalServices.
+                if (!showInternalServices && q.Name.StartsWith("amq.", StringComparison.Ordinal)) continue;
+
+                services.Add(new BowireServiceInfo(q.Name, "amqp", new List<BowireMethodInfo>
+                {
+                    BuildReceiveMethod(ReceiveMethodName, q.Name),
+                }));
             }
             return services;
         }
