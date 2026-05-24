@@ -38,6 +38,15 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
     /// <summary>Method name of the streaming consume / receive operation.</summary>
     public const string ReceiveMethodName = "receive";
 
+    // Plugin-wide defaults. Mirrored as the DefaultValue on the
+    // corresponding BowirePluginSetting entry below so the workbench's
+    // settings dialog and the runtime stay in lockstep. Per-connection
+    // overrides ride in on the URL query (?_mgmtPort=… &c.) — see
+    // AmqpEndpoint.ParseSettingsQuery.
+    internal const int DefaultManagementPort = 15672;
+    internal const int DefaultDiscoveryTimeoutSeconds = 5;
+    internal const int DefaultReceiveTimeoutSeconds = 30;
+
     /// <inheritdoc />
     public string Name => "AMQP";
 
@@ -64,14 +73,14 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
     public IReadOnlyList<BowirePluginSetting> Settings =>
     [
         new("managementApiPort", "Management API port",
-            "RabbitMQ Management HTTP API port for discovery (0.9.1 only). Defaults to 15672.",
-            "number", 15672),
+            $"RabbitMQ Management HTTP API port for discovery (0.9.1 only). Per-connection override: `?_mgmtPort=<n>` in the URL. Default {DefaultManagementPort}.",
+            "number", DefaultManagementPort),
         new("discoveryTimeoutSeconds", "Discovery timeout",
-            "Max seconds to wait on broker / management-API responses during discovery.",
-            "number", 5),
+            $"Max seconds to wait on broker / management-API responses during discovery. Per-connection override: `?_discoveryTimeout=<n>`. Default {DefaultDiscoveryTimeoutSeconds}.",
+            "number", DefaultDiscoveryTimeoutSeconds),
         new("receiveTimeoutSeconds", "Receive timeout",
-            "Max seconds the streaming consume/receive operation waits between frames before tearing down.",
-            "number", 30),
+            $"Max seconds the streaming consume/receive operation waits between frames before tearing down. Per-connection override: `?_receiveTimeout=<n>` in the URL or `receiveTimeoutSeconds` in metadata. Default {DefaultReceiveTimeoutSeconds}.",
+            "number", DefaultReceiveTimeoutSeconds),
     ];
 
     /// <inheritdoc />
@@ -117,7 +126,12 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
         var endpoint = ParseOrThrow(serverUrl);
         // method names other than "receive" are still allowed — callers
         // may carry custom verbs from a recording or AsyncAPI op.
-        var receiveTimeout = ReadIntMeta(metadata, "receiveTimeoutSeconds", 30);
+        // Resolution order for receiveTimeoutSeconds:
+        //   1. metadata key (per-invoke override, e.g. from the workbench)
+        //   2. URL-query override (?_receiveTimeout=N, picked up at parse)
+        //   3. plugin default (DefaultReceiveTimeoutSeconds = 30 s)
+        var receiveTimeout = ReadIntMeta(metadata, "receiveTimeoutSeconds",
+            endpoint.ReceiveTimeoutSeconds ?? DefaultReceiveTimeoutSeconds);
 
         if (endpoint.Wire == AmqpWire.V091)
         {
@@ -152,10 +166,15 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
         AmqpEndpoint endpoint, bool showInternalServices, CancellationToken ct)
     {
         // Management plugin lives on a separate HTTP port from the AMQP
-        // wire port. Default 15672; can be overridden via "managementApiPort"
-        // in the plugin settings (read by the workbench at the host
-        // boundary — at this layer we use the convention default).
-        var mgmt = new RabbitMqManagement(endpoint, managementPort: 15672, timeout: TimeSpan.FromSeconds(5));
+        // wire port. Default DefaultManagementPort (15672); overridable
+        // per connection via `?_mgmtPort=<n>` on the URL (picked up by
+        // AmqpEndpoint.TryParse). The IBowireProtocol.DiscoverAsync
+        // contract carries no metadata bag, so URL-query is the only
+        // path a caller has to tweak discovery-time settings.
+        var mgmtPort = endpoint.ManagementPort ?? DefaultManagementPort;
+        var discoveryTimeout = TimeSpan.FromSeconds(
+            endpoint.DiscoveryTimeoutSeconds ?? DefaultDiscoveryTimeoutSeconds);
+        var mgmt = new RabbitMqManagement(endpoint, managementPort: mgmtPort, timeout: discoveryTimeout);
         try
         {
             var exchanges = await mgmt.GetExchangesAsync(ct).ConfigureAwait(false);

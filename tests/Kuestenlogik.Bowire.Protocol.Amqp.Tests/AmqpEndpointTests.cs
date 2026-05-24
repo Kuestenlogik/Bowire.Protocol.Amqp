@@ -74,4 +74,70 @@ public sealed class AmqpEndpointTests
         Assert.False(AmqpEndpoint.TryParse(url, out var ep));
         Assert.Null(ep);
     }
+
+    // -------- Settings overrides via URL query --------
+
+    [Fact]
+    public void Bare_url_leaves_setting_overrides_null()
+    {
+        // No query → all three override fields remain null, plugin defaults apply.
+        Assert.True(AmqpEndpoint.TryParse("amqp://broker:5672/", out var ep));
+        Assert.Null(ep!.ManagementPort);
+        Assert.Null(ep.DiscoveryTimeoutSeconds);
+        Assert.Null(ep.ReceiveTimeoutSeconds);
+    }
+
+    [Fact]
+    public void Picks_up_all_three_setting_overrides_from_query()
+    {
+        Assert.True(AmqpEndpoint.TryParse(
+            "amqp://broker:5672/?_mgmtPort=15673&_discoveryTimeout=10&_receiveTimeout=60",
+            out var ep));
+        Assert.Equal(15673, ep!.ManagementPort);
+        Assert.Equal(10, ep.DiscoveryTimeoutSeconds);
+        Assert.Equal(60, ep.ReceiveTimeoutSeconds);
+    }
+
+    [Fact]
+    public void Setting_overrides_work_on_1_0_scheme_too()
+    {
+        // _receiveTimeout is the only setting that affects 1.0 streaming;
+        // the others stay parsable even though 1.0 ignores them — the
+        // parser doesn't know which wire will actually consume them.
+        Assert.True(AmqpEndpoint.TryParse(
+            "amqp1://broker/?_receiveTimeout=120",
+            out var ep));
+        Assert.Equal(AmqpWire.V10, ep!.Wire);
+        Assert.Equal(120, ep.ReceiveTimeoutSeconds);
+    }
+
+    [Theory]
+    [InlineData("?_mgmtPort=0")]
+    [InlineData("?_mgmtPort=65536")]
+    [InlineData("?_mgmtPort=-1")]
+    [InlineData("?_mgmtPort=not-a-number")]
+    [InlineData("?_discoveryTimeout=0")]
+    [InlineData("?_discoveryTimeout=-5")]
+    [InlineData("?_receiveTimeout=0")]
+    public void Invalid_override_values_fall_back_to_null(string query)
+    {
+        Assert.True(AmqpEndpoint.TryParse($"amqp://broker:5672/{query}", out var ep));
+        // Whichever field got the bad value stays null — caller falls
+        // back to the plugin's DefaultXxx constant.
+        Assert.True(
+            ep!.ManagementPort is null &&
+            ep.DiscoveryTimeoutSeconds is null &&
+            ep.ReceiveTimeoutSeconds is null);
+    }
+
+    [Fact]
+    public void Unknown_query_keys_are_ignored_forward_compat()
+    {
+        // A newer workbench shipping additional Bowire-private settings
+        // keys mustn't blow up an older plugin's parser.
+        Assert.True(AmqpEndpoint.TryParse(
+            "amqp://broker:5672/?_mgmtPort=15673&_futureFlag=yes&heartbeat=30",
+            out var ep));
+        Assert.Equal(15673, ep!.ManagementPort);
+    }
 }

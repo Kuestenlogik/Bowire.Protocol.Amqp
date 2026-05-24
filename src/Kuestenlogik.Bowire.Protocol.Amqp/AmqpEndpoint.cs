@@ -45,7 +45,18 @@ public sealed record AmqpEndpoint(
     bool UseTls,
     string? UserName,
     string? Password,
-    string AddressOrVhost)
+    string AddressOrVhost,
+    // Per-connection overrides for the plugin-wide settings. Picked up
+    // from the URL query string at parse time:
+    //   amqp://host:5672/vhost?_mgmtPort=15673&_discoveryTimeout=10&_receiveTimeout=60
+    // null means "fall through to the plugin defaults declared on
+    // BowireAmqpProtocol.Settings". Discovery has no metadata channel
+    // (the IBowireProtocol.DiscoverAsync contract is metadata-less), so
+    // the URL is the only place a caller can override these on a
+    // per-connection basis.
+    int? ManagementPort = null,
+    int? DiscoveryTimeoutSeconds = null,
+    int? ReceiveTimeoutSeconds = null)
 {
     /// <summary>
     /// Try to parse a Bowire-style AMQP server URL. Returns <c>false</c> on
@@ -98,6 +109,13 @@ public sealed record AmqpEndpoint(
             ? (wire == AmqpWire.V091 ? "/" : string.Empty)
             : WebUtility.UrlDecode(uri.AbsolutePath.TrimStart('/'));
 
+        // Per-connection setting overrides via URL query. Three keys; each
+        // optional. Unknown keys are ignored (forward-compat: an older
+        // plugin reading a URL that an newer workbench wrote with extra
+        // tweaks should keep working). Invalid integer values fall back
+        // to null → plugin defaults.
+        var (mgmtPort, discoveryTimeout, receiveTimeout) = ParseSettingsQuery(uri.Query);
+
         endpoint = new AmqpEndpoint(
             Wire: wire,
             Host: uri.Host,
@@ -105,7 +123,44 @@ public sealed record AmqpEndpoint(
             UseTls: tls,
             UserName: user,
             Password: pass,
-            AddressOrVhost: tail);
+            AddressOrVhost: tail,
+            ManagementPort: mgmtPort,
+            DiscoveryTimeoutSeconds: discoveryTimeout,
+            ReceiveTimeoutSeconds: receiveTimeout);
         return true;
+    }
+
+    private static (int? Mgmt, int? DiscoveryTimeout, int? ReceiveTimeout) ParseSettingsQuery(string query)
+    {
+        if (string.IsNullOrEmpty(query) || query == "?")
+            return (null, null, null);
+
+        int? mgmt = null, discovery = null, receive = null;
+        // Hand-roll instead of HttpUtility / QueryHelpers to stay free of
+        // a System.Web / Microsoft.AspNetCore reference at plugin scope.
+        foreach (var raw in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var eq = raw.IndexOf('=', StringComparison.Ordinal);
+            if (eq <= 0) continue;
+            var key = WebUtility.UrlDecode(raw[..eq]);
+            var val = WebUtility.UrlDecode(raw[(eq + 1)..]);
+
+            // Underscore-prefixed names are Bowire-private settings keys;
+            // they don't collide with broker-native query params (RabbitMQ
+            // uses e.g. heartbeat, connection_timeout — bare names).
+            switch (key)
+            {
+                case "_mgmtPort":
+                    if (int.TryParse(val, out var p) && p is > 0 and <= 65535) mgmt = p;
+                    break;
+                case "_discoveryTimeout":
+                    if (int.TryParse(val, out var d) && d > 0) discovery = d;
+                    break;
+                case "_receiveTimeout":
+                    if (int.TryParse(val, out var r) && r > 0) receive = r;
+                    break;
+            }
+        }
+        return (mgmt, discovery, receive);
     }
 }
