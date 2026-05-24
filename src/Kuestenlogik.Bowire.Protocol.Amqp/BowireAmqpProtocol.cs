@@ -45,7 +45,20 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
     public string Id => "amqp";
 
     /// <inheritdoc />
-    public string IconSvg => """<svg viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" aria-hidden="true"><rect x="3" y="7" width="14" height="10" rx="1"/><path d="M17 10l4 2-4 2"/><path d="M7 4v3"/><path d="M13 4v3"/></svg>""";
+    /// <remarks>
+    /// Official AMQP brand mark from amqp.org — the geometric symbol
+    /// only, no wordmark. Paths copied from the SVG the Bowire
+    /// marketing site ships at /assets/images/protocols/amqp-mark.svg,
+    /// cropped to a tight 24x24 viewBox so the mark fills the
+    /// sidebar's icon slot at any size and matches what the user
+    /// sees on the protocol card / downloads tile. The four
+    /// hard-coded brand colours (#a2b0d9 / #002585 / #000000 /
+    /// #caccce) are part of the mark and don't follow the workbench
+    /// theme — same convention every other protocol icon uses for
+    /// vendor-defined brand marks (MQTT's purple, Kafka's
+    /// hex-cluster, etc.).
+    /// </remarks>
+    public string IconSvg => """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><g transform="translate(-38.00395,-184.20569)"><rect style="fill:#a2b0d9" width="6.4565849" height="14.974796" x="46.661499" y="184.20569"/><path style="fill:#002585" d="m 46.669743,192.73682 6.410884,6.45658 H 38.00395 v -6.45658 z"/><rect style="fill:#000000" width="6" height="6" x="38.048462" y="184.20569"/><rect style="fill:#caccce" width="6.4565849" height="23.727749" x="55.318237" y="184.20569"/><path style="fill:#caccce" d="m 38.069535,184.23482 h 2.988509 2.988511 v 2.97153 2.97153 z"/><path d="m 55.370997,201.4825 6.40669,6.45658 h -23.76618 v -6.45658 z"/></g></svg>""";
 
     /// <inheritdoc />
     public IReadOnlyList<BowirePluginSetting> Settings =>
