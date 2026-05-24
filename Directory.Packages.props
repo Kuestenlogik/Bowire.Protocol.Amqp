@@ -17,7 +17,7 @@
          Microsoft's AMQPNetLite is the long-standing, lightweight,
          Microsoft-validated 1.0 stack — same wire format used by the
          Azure SDK's internals. -->
-    <PackageVersion Include="AMQPNetLite" Version="2.4.11" />
+    <PackageVersion Include="AMQPNetLite" Version="2.5.2" />
 
     <!-- Test-only -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.5.1" />
