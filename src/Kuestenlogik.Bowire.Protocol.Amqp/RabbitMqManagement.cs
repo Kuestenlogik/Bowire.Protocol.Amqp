@@ -99,6 +99,20 @@ internal sealed class RabbitMqManagement : IDisposable
         return list ?? new List<BindingInfo>();
     }
 
+    /// <summary>
+    /// List every queue declared on the configured vhost. Queues are the
+    /// consumer-facing surface — Bowire's discovery turns each one into a
+    /// service entry with a streaming <c>receive</c> method so the
+    /// workbench can subscribe to it without the operator hand-rolling a
+    /// queue name in metadata.
+    /// </summary>
+    public async Task<IReadOnlyList<QueueInfo>> GetQueuesAsync(CancellationToken ct)
+    {
+        var path = $"api/queues/{Uri.EscapeDataString(_vhost)}";
+        var list = await _http.GetFromJsonAsync<List<QueueInfo>>(path, JsonOptions, ct).ConfigureAwait(false);
+        return list ?? new List<QueueInfo>();
+    }
+
     public void Dispose()
     {
         if (_ownsHttp) _http.Dispose();
@@ -119,4 +133,13 @@ internal sealed class RabbitMqManagement : IDisposable
         [property: JsonPropertyName("destination")] string Destination,
         [property: JsonPropertyName("destination_type")] string DestinationType,
         [property: JsonPropertyName("routing_key")] string RoutingKey);
+
+    /// <summary>One row from <c>/api/queues</c>. Bare-bones; we only need
+    /// the name + durability for Bowire's service-tree rendering. The
+    /// management API exposes plenty of runtime state (message counts,
+    /// consumer counts, memory) that the workbench doesn't need at the
+    /// discovery stage.</summary>
+    public sealed record QueueInfo(
+        [property: JsonPropertyName("name")] string Name,
+        [property: JsonPropertyName("durable")] bool Durable);
 }
