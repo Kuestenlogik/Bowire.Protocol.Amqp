@@ -120,7 +120,7 @@ internal sealed class RabbitMqManagement : IDisposable
 
     /// <summary>One row from <c>/api/exchanges</c>. Bare-bones — we only
     /// need the name + type for Bowire's service-tree rendering.</summary>
-    public sealed record ExchangeInfo(
+    internal sealed record ExchangeInfo(
         [property: JsonPropertyName("name")] string Name,
         [property: JsonPropertyName("type")] string Type,
         [property: JsonPropertyName("durable")] bool Durable);
@@ -128,7 +128,7 @@ internal sealed class RabbitMqManagement : IDisposable
     /// <summary>One row from <c>/api/bindings</c>. <c>source</c> is the
     /// exchange the binding leaves; <c>destination_type</c> is "queue"
     /// or "exchange"; <c>routing_key</c> is the key clients publish with.</summary>
-    public sealed record BindingInfo(
+    internal sealed record BindingInfo(
         [property: JsonPropertyName("source")] string Source,
         [property: JsonPropertyName("destination")] string Destination,
         [property: JsonPropertyName("destination_type")] string DestinationType,
@@ -139,7 +139,7 @@ internal sealed class RabbitMqManagement : IDisposable
     /// management API exposes plenty of runtime state (message counts,
     /// consumer counts, memory) that the workbench doesn't need at the
     /// discovery stage.</summary>
-    public sealed record QueueInfo(
+    internal sealed record QueueInfo(
         [property: JsonPropertyName("name")] string Name,
         [property: JsonPropertyName("durable")] bool Durable);
 }

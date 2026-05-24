@@ -1,15 +1,12 @@
 # Kuestenlogik.Bowire.Protocol.Amqp
 
+[![CI](https://img.shields.io/github/actions/workflow/status/Kuestenlogik/Bowire.Protocol.Amqp/ci.yml?branch=main&label=CI)](https://github.com/Kuestenlogik/Bowire.Protocol.Amqp/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/Kuestenlogik/Bowire.Protocol.Amqp/branch/main/graph/badge.svg)](https://codecov.io/gh/Kuestenlogik/Bowire.Protocol.Amqp)
 [![NuGet](https://img.shields.io/nuget/v/Kuestenlogik.Bowire.Protocol.Amqp.svg)](https://www.nuget.org/packages/Kuestenlogik.Bowire.Protocol.Amqp)
+[![License](https://img.shields.io/github/license/Kuestenlogik/Bowire.Protocol.Amqp)](https://github.com/Kuestenlogik/Bowire.Protocol.Amqp/blob/main/LICENSE)
 [![Bowire](https://img.shields.io/badge/Bowire-%E2%89%A5%201.5.0%2C%20%3C%202.0-006B9F)](https://github.com/Kuestenlogik/Bowire/blob/main/docs/architecture/compatibility.md)
 
 Bowire plugin for AMQP — both **AMQP 0.9.1** (RabbitMQ, ActiveMQ Classic) and **AMQP 1.0** (Azure Service Bus, ActiveMQ Artemis) through a single plugin id (`amqp`). The wire variant is selected from the URL scheme.
-
-> **Status: 0.2.x — functional.** Discovery, unary invocation, and streaming
-> are wired through for both wires. AMQP 0.9.1 uses RabbitMQ.Client against
-> the broker + the Management HTTP API for discovery. AMQP 1.0 uses
-> AMQPNetLite with a synthetic `Broker` service (the wire has no schema
-> concept). Integration tests against live brokers land in a later pass.
 
 ## URL schemes
 
@@ -72,8 +69,28 @@ registration required. Standalone CLI: `bowire plugin install Kuestenlogik.Bowir
 
 The AsyncAPI plugin (`Kuestenlogik.Bowire.AsyncApi`) routes
 `bindings.amqp` and `bindings.amqp1` declarations through this
-plugin via the registry-driven binding lookup. The Phase C resolver
-in the main repo lands alongside `Bowire 1.6.0`.
+plugin via the registry-driven binding lookup — shipped in Bowire
+1.5.x as Phase C of the AsyncAPI roll-out.
+
+## Tests
+
+Unit tests run on every CI build with no broker required. The
+integration suite under `tests/.../Integration` spins up real
+RabbitMQ (0.9.1) and ActiveMQ Artemis (1.0) containers via
+Testcontainers and round-trips publish + consume against each. The
+integration tests carry `[Trait("Category", "Docker")]` so a local
+`dotnet test --filter "Category!=Docker"` skips them on hosts
+without a Docker daemon — CI runs them.
+
+## Sample
+
+A self-contained sample lives under
+[`samples/Kuestenlogik.Bowire.Protocol.Amqp.Sample`](samples/Kuestenlogik.Bowire.Protocol.Amqp.Sample/)
+— `docker compose up` brings up RabbitMQ + Artemis, the ASP.NET host
+declares a `harbor` topic exchange + queues and emits crane-event
+messages on a timer, and Bowire pointed at `amqp://localhost:5672/`
+or `amqp1://localhost:5672` discovers the surface and streams the
+events live.
 
 ## License
 

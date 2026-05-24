@@ -10,7 +10,7 @@ public sealed class AmqpEndpointTests
     [InlineData("amqps://broker:5671", AmqpWire.V091, "broker", 5671, true)]
     [InlineData("amqp1://broker:5672", AmqpWire.V10, "broker", 5672, false)]
     [InlineData("amqps1://broker:5671", AmqpWire.V10, "broker", 5671, true)]
-    public void Picks_wire_variant_and_tls_from_scheme(string url, AmqpWire wire, string host, int port, bool tls)
+    internal void Picks_wire_variant_and_tls_from_scheme(string url, AmqpWire wire, string host, int port, bool tls)
     {
         Assert.True(AmqpEndpoint.TryParse(url, out var ep));
         Assert.Equal(wire, ep!.Wire);

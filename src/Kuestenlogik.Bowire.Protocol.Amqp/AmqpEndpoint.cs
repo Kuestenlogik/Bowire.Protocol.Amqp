@@ -12,7 +12,7 @@ namespace Kuestenlogik.Bowire.Protocol.Amqp;
 /// based on this value (same pattern the gRPC plugin uses to pick
 /// native HTTP/2 vs. gRPC-Web).
 /// </summary>
-public enum AmqpWire
+internal enum AmqpWire
 {
     /// <summary>AMQP 0.9.1 — RabbitMQ, ActiveMQ Classic. Wire stack: <c>RabbitMQ.Client</c>.</summary>
     V091,
@@ -38,7 +38,7 @@ public enum AmqpWire
 /// when none is in the URL. The 1.0 path leaves <see cref="AddressOrVhost"/>
 /// empty for callers to fill from <c>service</c>/<c>method</c> later.
 /// </remarks>
-public sealed record AmqpEndpoint(
+internal sealed record AmqpEndpoint(
     AmqpWire Wire,
     string Host,
     int Port,

@@ -245,6 +245,10 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
         Dictionary<string, string>? metadata, Stopwatch sw, CancellationToken ct)
     {
         var factory = BuildRabbitFactory(endpoint);
+        // Apply mTLS + SASL markers and strip them from metadata before
+        // any of the headers below pick it up — the markers are
+        // Bowire-private and must not leak as broker properties.
+        metadata = AmqpSecurityConfig.ApplyV091(factory, metadata);
         await using var conn = await factory.CreateConnectionAsync(ct).ConfigureAwait(false);
         await using var channel = await conn.CreateChannelAsync(cancellationToken: ct).ConfigureAwait(false);
 
@@ -264,11 +268,11 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
         if (ReadIntMeta(metadata, "deliveryMode", -1) is int dm and (1 or 2))
             props.DeliveryMode = (DeliveryModes)dm;
         if (ReadStringMeta(metadata, "expiration") is { } exp) props.Expiration = exp;
-        if (ReadBoolMeta(metadata, "mandatory", false) is bool mandatory && mandatory)
-        {
-            // mandatory=true is passed to BasicPublishAsync directly below;
-            // there's no Properties bit for it.
-        }
+
+        // `mandatory` rides on BasicPublishAsync directly (no Properties
+        // bit for it) — the broker returns the message via basic.return
+        // when no queue is bound. Useful for surfacing "publish to a
+        // dead routing key" cases as visible failures.
         var mandatoryFlag = ReadBoolMeta(metadata, "mandatory", false);
 
         await channel.BasicPublishAsync(
@@ -304,6 +308,7 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
         var autoAck = ReadBoolMeta(metadata, "autoAck", true);
 
         var factory = BuildRabbitFactory(endpoint);
+        metadata = AmqpSecurityConfig.ApplyV091(factory, metadata);
         await using var conn = await factory.CreateConnectionAsync(ct).ConfigureAwait(false);
         await using var channel = await conn.CreateChannelAsync(cancellationToken: ct).ConfigureAwait(false);
 
@@ -313,9 +318,8 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
         var consumer = new AsyncEventingBasicConsumer(channel);
         consumer.ReceivedAsync += async (_, ea) =>
         {
-            var json = TryDecodeJson(ea.Body.Span, ea.BasicProperties?.ContentType)
-                ?? $"\"{Convert.ToBase64String(ea.Body.ToArray())}\"";
-            await pipe.Writer.WriteAsync(json, ct).ConfigureAwait(false);
+            var envelope = BuildV091Envelope(ea);
+            await pipe.Writer.WriteAsync(envelope, ct).ConfigureAwait(false);
         };
 
         await channel.BasicConsumeAsync(queue: queue, autoAck: autoAck, consumer: consumer, cancellationToken: ct).ConfigureAwait(false);
@@ -405,7 +409,9 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
         var address = ReadStringMeta(metadata, "address")
             ?? (string.IsNullOrEmpty(endpoint.AddressOrVhost) ? service : endpoint.AddressOrVhost);
 
-        var connection = await Connection.Factory.CreateAsync(BuildAmqp10Address(endpoint)).ConfigureAwait(false);
+        var amqpFactory = new global::Amqp.ConnectionFactory();
+        metadata = AmqpSecurityConfig.ApplyV10(amqpFactory, metadata);
+        var connection = await amqpFactory.CreateAsync(BuildAmqp10Address(endpoint)).ConfigureAwait(false);
         try
         {
             var session = new Session(connection);
@@ -457,7 +463,9 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
         var address = ReadStringMeta(metadata, "address")
             ?? (string.IsNullOrEmpty(endpoint.AddressOrVhost) ? service : endpoint.AddressOrVhost);
 
-        var connection = await Connection.Factory.CreateAsync(BuildAmqp10Address(endpoint)).ConfigureAwait(false);
+        var amqpFactory = new global::Amqp.ConnectionFactory();
+        metadata = AmqpSecurityConfig.ApplyV10(amqpFactory, metadata);
+        var connection = await amqpFactory.CreateAsync(BuildAmqp10Address(endpoint)).ConfigureAwait(false);
         Session? session = null;
         ReceiverLink? receiver = null;
         try
@@ -480,9 +488,7 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
                     string s => Encoding.UTF8.GetBytes(s),
                     _ => Encoding.UTF8.GetBytes(message.Body?.ToString() ?? string.Empty),
                 };
-                var json = TryDecodeJson(bodyBytes, message.Properties?.ContentType)
-                    ?? $"\"{Convert.ToBase64String(bodyBytes)}\"";
-                yield return json;
+                yield return BuildV10Envelope(message, bodyBytes, address);
             }
         }
         finally
@@ -539,6 +545,99 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
 
     private static bool ReadBoolMeta(Dictionary<string, string>? metadata, string key, bool @default)
         => metadata is not null && metadata.TryGetValue(key, out var v) && bool.TryParse(v, out var b) ? b : @default;
+
+    /// <summary>
+    /// Serialise a 0.9.1 delivery into the Bowire receive envelope. Mirrors
+    /// the Kafka plugin's pattern: a JSON object that surfaces the
+    /// transport-level metadata the broker hands us (exchange / routingKey /
+    /// deliveryTag / contentType / messageId / correlationId / timestamp),
+    /// plus the decoded body under either <c>value</c> (when the bytes parse
+    /// as JSON per the content-type) or <c>bytes</c> (base64, when they
+    /// don't). The <c>encoding</c> field tells the workbench which branch it
+    /// was — so the body-viewer picks the right renderer without sniffing.
+    /// </summary>
+    private static string BuildV091Envelope(BasicDeliverEventArgs ea)
+    {
+        var contentType = ea.BasicProperties?.ContentType;
+        var bodySpan = ea.Body.Span;
+        var inlineJson = TryDecodeJson(bodySpan, contentType);
+
+        using var stream = new System.IO.MemoryStream();
+        using (var writer = new System.Text.Json.Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("exchange", ea.Exchange ?? string.Empty);
+            writer.WriteString("routingKey", ea.RoutingKey ?? string.Empty);
+            writer.WriteNumber("deliveryTag", ea.DeliveryTag);
+            writer.WriteBoolean("redelivered", ea.Redelivered);
+            if (!string.IsNullOrEmpty(contentType))
+                writer.WriteString("contentType", contentType);
+            if (!string.IsNullOrEmpty(ea.BasicProperties?.MessageId))
+                writer.WriteString("messageId", ea.BasicProperties.MessageId);
+            if (!string.IsNullOrEmpty(ea.BasicProperties?.CorrelationId))
+                writer.WriteString("correlationId", ea.BasicProperties.CorrelationId);
+            if (ea.BasicProperties?.IsTimestampPresent() == true)
+                writer.WriteNumber("timestamp", ea.BasicProperties.Timestamp.UnixTime);
+            if (inlineJson is not null)
+            {
+                writer.WriteString("encoding", "json");
+                writer.WritePropertyName("value");
+                // Re-emit the JSON token tree so the consumer sees parsed
+                // JSON rather than a string-escaped blob.
+                using var doc = System.Text.Json.JsonDocument.Parse(inlineJson);
+                doc.RootElement.WriteTo(writer);
+            }
+            else
+            {
+                writer.WriteString("encoding", "base64");
+                writer.WriteString("bytes", Convert.ToBase64String(bodySpan.ToArray()));
+            }
+            writer.WriteEndObject();
+        }
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    /// <summary>
+    /// 1.0 counterpart to <see cref="BuildV091Envelope"/>. The 1.0 wire has
+    /// no exchange/routing-key concept — the address replaces both — and
+    /// no native deliveryTag (we count locally). Everything else mirrors
+    /// the 0.9.1 shape so the workbench's body-viewer doesn't need a
+    /// wire-aware branch.
+    /// </summary>
+    private static string BuildV10Envelope(global::Amqp.Message message, byte[] bodyBytes, string address)
+    {
+        var contentType = message.Properties?.ContentType;
+        var inlineJson = TryDecodeJson(bodyBytes, contentType);
+
+        using var stream = new System.IO.MemoryStream();
+        using (var writer = new System.Text.Json.Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("address", address);
+            if (!string.IsNullOrEmpty(contentType))
+                writer.WriteString("contentType", contentType);
+            if (!string.IsNullOrEmpty(message.Properties?.MessageId))
+                writer.WriteString("messageId", message.Properties.MessageId);
+            if (!string.IsNullOrEmpty(message.Properties?.CorrelationId))
+                writer.WriteString("correlationId", message.Properties.CorrelationId);
+            if (message.Properties?.CreationTime is { } created && created != default)
+                writer.WriteNumber("timestamp", new DateTimeOffset(created, TimeSpan.Zero).ToUnixTimeSeconds());
+            if (inlineJson is not null)
+            {
+                writer.WriteString("encoding", "json");
+                writer.WritePropertyName("value");
+                using var doc = System.Text.Json.JsonDocument.Parse(inlineJson);
+                doc.RootElement.WriteTo(writer);
+            }
+            else
+            {
+                writer.WriteString("encoding", "base64");
+                writer.WriteString("bytes", Convert.ToBase64String(bodyBytes));
+            }
+            writer.WriteEndObject();
+        }
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
 
     private static string? TryDecodeJson(ReadOnlySpan<byte> body, string? contentType)
     {
