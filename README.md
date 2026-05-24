@@ -1,6 +1,7 @@
 # Kuestenlogik.Bowire.Protocol.Amqp
 
 [![NuGet](https://img.shields.io/nuget/v/Kuestenlogik.Bowire.Protocol.Amqp.svg)](https://www.nuget.org/packages/Kuestenlogik.Bowire.Protocol.Amqp)
+[![Bowire](https://img.shields.io/badge/Bowire-%E2%89%A5%201.5.0%2C%20%3C%202.0-006B9F)](https://github.com/Kuestenlogik/Bowire/blob/main/docs/architecture/compatibility.md)
 
 Bowire plugin for AMQP — both **AMQP 0.9.1** (RabbitMQ, ActiveMQ Classic) and **AMQP 1.0** (Azure Service Bus, ActiveMQ Artemis) through a single plugin id (`amqp`). The wire variant is selected from the URL scheme.
 
