@@ -84,13 +84,15 @@ without a Docker daemon — CI runs them.
 
 ## Sample
 
-A self-contained sample lives under
-[`samples/Kuestenlogik.Bowire.Protocol.Amqp.Sample`](samples/Kuestenlogik.Bowire.Protocol.Amqp.Sample/)
-— `docker compose up` brings up RabbitMQ + Artemis, the ASP.NET host
-declares a `harbor` topic exchange + queues and emits crane-event
-messages on a timer, and Bowire pointed at `amqp://localhost:5672/`
-or `amqp1://localhost:5672` discovers the surface and streams the
-events live.
+A self-contained sample lives in the central
+[`Bowire.Samples`](https://github.com/Kuestenlogik/Bowire.Samples) repo
+under
+[`src/Kuestenlogik.Bowire.Samples.Amqp`](https://github.com/Kuestenlogik/Bowire.Samples/tree/main/src/Kuestenlogik.Bowire.Samples.Amqp)
+— `docker compose -f compose.yaml up` brings up RabbitMQ with the
+management plugin, the ASP.NET host declares a `harbor` topic
+exchange + bound queues and emits crane telemetry on a timer, and
+Bowire pointed at `amqp://localhost:5672` discovers the surface and
+streams the events live.
 
 ## License
 
