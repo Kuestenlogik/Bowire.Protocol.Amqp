@@ -361,11 +361,21 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
 
     private static List<BowireServiceInfo> DiscoverV10()
     {
-        // AMQP 1.0 has no broker-side schema concept — there is no way to
-        // enumerate addresses from the wire. Return the synthetic Broker
-        // service so the workbench has something to anchor send/receive
-        // against; the actual target address comes from metadata at
-        // invoke time.
+        // AMQP 1.0 has no broker-side schema concept — the spec doesn't
+        // define a way to enumerate addresses from the wire. The plugin
+        // returns a synthetic Broker service so the workbench has
+        // something to anchor send/receive against; the actual target
+        // address comes from the URL path or the `address` metadata
+        // key at invoke time.
+        //
+        // Broker-specific management APIs that could lift this (Azure
+        // Service Bus management API + Bearer auth, Artemis Jolokia HTTP
+        // bridge, RabbitMQ-with-1.0-extension Management plugin) sit
+        // outside the AMQP 1.0 standard. Adding any of them belongs in
+        // a follow-up plugin (`Bowire.Protocol.Amqp.ServiceBus`,
+        // `Bowire.Protocol.Amqp.Artemis`) so the auth surface area for
+        // those vendor-specific paths doesn't bleed into the core
+        // AMQP plugin's contract.
         return new List<BowireServiceInfo>
         {
             new(BrokerServiceName, "amqp", new List<BowireMethodInfo>
