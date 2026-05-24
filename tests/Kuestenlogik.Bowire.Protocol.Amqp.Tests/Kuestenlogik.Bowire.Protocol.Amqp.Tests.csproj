@@ -9,7 +9,7 @@
          model — its analyzers explicitly want it omitted in test
          bodies. Both rules fight project-wide TreatWarningsAsErrors;
          scoped suppression keeps the policy strict everywhere else. -->
-    <NoWarn>$(NoWarn);CA1707;xUnit1030;CA1054</NoWarn>
+    <NoWarn>$(NoWarn);CA1707;xUnit1030;CA1054;CA1056;CA2000;CA1515</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,6 +17,8 @@
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Testcontainers" />
+    <PackageReference Include="Testcontainers.RabbitMq" />
   </ItemGroup>
 
   <ItemGroup>

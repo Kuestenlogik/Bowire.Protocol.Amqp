@@ -25,5 +25,14 @@
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.300" />
+
+    <!-- Testcontainers — real broker round-trips for the Docker-tagged
+         integration suite. Testcontainers.RabbitMq spins up the 0.9.1
+         wire with the management plugin enabled (so discovery has a
+         management-API target); the generic Testcontainers package
+         covers Artemis for the 1.0 wire (no dedicated helper exists,
+         we drive the official Artemis image directly). -->
+    <PackageVersion Include="Testcontainers" Version="4.12.0" />
+    <PackageVersion Include="Testcontainers.RabbitMq" Version="4.11.0" />
   </ItemGroup>
 </Project>
