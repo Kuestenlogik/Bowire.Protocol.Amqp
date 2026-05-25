@@ -123,4 +123,119 @@ public sealed class AmqpMockEmitterTests
         var bytes = AmqpMockEmitter.DecodePayload(step, NullLogger.Instance);
         Assert.Null(bytes);
     }
+
+    // -------- CanEmit edge cases --------
+
+    [Fact]
+    public async Task CanEmit_AmqpStepWithoutServerUrl_StillClaims()
+    {
+        // IsAmqp091Step accepts null ServerUrl — the broker URL defaults
+        // to amqp://localhost:5672/ at StartAsync time, so a recording
+        // with a bare-protocol step is still ours.
+        await using var emitter = new AmqpMockEmitter();
+        var rec = new BowireRecording
+        {
+            Steps = { new BowireRecordingStep { Protocol = "amqp", ServerUrl = null } },
+        };
+        Assert.True(emitter.CanEmit(rec));
+    }
+
+    [Fact]
+    public async Task CanEmit_AmqpsScheme_IsAlsoClaimed()
+    {
+        await using var emitter = new AmqpMockEmitter();
+        var rec = new BowireRecording
+        {
+            Steps = { new BowireRecordingStep { Protocol = "amqp", ServerUrl = "amqps://broker:5671/" } },
+        };
+        Assert.True(emitter.CanEmit(rec));
+    }
+
+    [Fact]
+    public async Task CanEmit_ProtocolCasingIsIgnored()
+    {
+        await using var emitter = new AmqpMockEmitter();
+        var rec = new BowireRecording
+        {
+            Steps = { new BowireRecordingStep { Protocol = "AMQP", ServerUrl = "amqp://broker/" } },
+        };
+        Assert.True(emitter.CanEmit(rec));
+    }
+
+    [Fact]
+    public void CanEmit_NullRecording_Throws()
+    {
+        var emitter = new AmqpMockEmitter();
+        Assert.Throws<ArgumentNullException>(() => emitter.CanEmit(null!));
+    }
+
+    // -------- StartAsync early-return paths --------
+
+    [Fact]
+    public async Task StartAsync_EmptyRecording_NoBrokerContact()
+    {
+        // No amqp/0.9.1 steps → StartAsync bails out before
+        // ConnectionFactory.CreateConnectionAsync runs. The test
+        // succeeds simply by completing without a broker.
+        await using var emitter = new AmqpMockEmitter();
+        var rec = new BowireRecording { Steps = { new BowireRecordingStep { Protocol = "rest" } } };
+
+        await emitter.StartAsync(
+            rec, new MockEmitterOptions(), NullLogger.Instance, CancellationToken.None);
+        // Nothing to assert beyond "no throw, no hang" — the early
+        // return is the entire contract for this branch.
+    }
+
+    [Fact]
+    public async Task StartAsync_RecordingWithOnlyAmqp10Steps_BailsOut()
+    {
+        // After filtering 1.0 steps the list is empty; emitter logs
+        // the skip-warning *and* returns without opening a connection
+        // because the steps.Count == 0 check fires immediately.
+        await using var emitter = new AmqpMockEmitter();
+        var rec = new BowireRecording
+        {
+            Steps = { new BowireRecordingStep { Protocol = "amqp", ServerUrl = "amqp1://broker/" } },
+        };
+
+        await emitter.StartAsync(
+            rec, new MockEmitterOptions(), NullLogger.Instance, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task StartAsync_NullRecording_Throws()
+    {
+        await using var emitter = new AmqpMockEmitter();
+        await Assert.ThrowsAsync<ArgumentNullException>(
+            () => emitter.StartAsync(null!, new MockEmitterOptions(), NullLogger.Instance, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task StartAsync_NullOptions_Throws()
+    {
+        await using var emitter = new AmqpMockEmitter();
+        var rec = new BowireRecording();
+        await Assert.ThrowsAsync<ArgumentNullException>(
+            () => emitter.StartAsync(rec, null!, NullLogger.Instance, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task StartAsync_NullLogger_Throws()
+    {
+        await using var emitter = new AmqpMockEmitter();
+        var rec = new BowireRecording();
+        await Assert.ThrowsAsync<ArgumentNullException>(
+            () => emitter.StartAsync(rec, new MockEmitterOptions(), null!, CancellationToken.None));
+    }
+
+    // -------- DisposeAsync paths --------
+
+    [Fact]
+    public async Task DisposeAsync_BeforeStart_IsNoOp()
+    {
+        var emitter = new AmqpMockEmitter();
+        await emitter.DisposeAsync();
+        // Second dispose stays a no-op — the _disposed guard fires.
+        await emitter.DisposeAsync();
+    }
 }
