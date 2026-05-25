@@ -57,12 +57,12 @@ jobs:
         if: ${{ github.ref_type == 'tag' && env.NUGET_API_KEY != '' }}
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        # No separate .snupkg push — Directory.Build.props sets
+        # DebugType=embedded so debug info ships inside the .nupkg
+        # itself, and nuget.org's symbol-validation chain stays out
+        # of the equation.
         run: |
           dotnet nuget push "artifacts/packages/*.nupkg" \
-            --source https://api.nuget.org/v3/index.json \
-            --api-key "$NUGET_API_KEY" \
-            --skip-duplicate
-          dotnet nuget push "artifacts/packages/*.snupkg" \
             --source https://api.nuget.org/v3/index.json \
             --api-key "$NUGET_API_KEY" \
             --skip-duplicate

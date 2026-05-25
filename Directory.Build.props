@@ -55,9 +55,14 @@
   <PropertyGroup>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
-    <DebugType>portable</DebugType>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <!-- Embed debug info directly in the assembly so SourceLink works
+         without a separate .snupkg. The portable+snupkg split has been
+         tripping nuget.org's symbol-package validation on every push
+         (rc.1 and rc.2 both have .nupkg=200 / .snupkg=404 on the
+         flatcontainer); embedded sidesteps the matching problem
+         entirely and keeps step-through debugging available. -->
+    <DebugType>embedded</DebugType>
+    <IncludeSymbols>false</IncludeSymbols>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(IsPackable)' != 'false'">
