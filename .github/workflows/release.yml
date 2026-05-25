@@ -41,17 +41,20 @@ jobs:
       - name: Pack
         run: dotnet pack Bowire.Protocol.Amqp.slnx -c Release --no-build -o artifacts/packages -p:Version=${{ steps.version.outputs.VERSION }}
 
-      # Gated on non-RC tags so `v*-rc*` exercises the full pipeline as
-      # a dry run without permanently publishing a package version.
+      # Every tag publishes to both feeds, RCs included. SemVer's
+      # `-rc.N` suffix marks them as pre-release on NuGet, so
+      # consumers only receive them on explicit opt-in (the
+      # `--prerelease` flag for `dotnet add package`, or a pinned
+      # `Version="1.0.0-rc.1"`). Stable-restore paths are untouched.
+      # Matches the Bowire main repo's policy.
       - name: Publish to GitHub Packages
-        if: ${{ !contains(github.ref, '-rc') }}
+        if: ${{ github.ref_type == 'tag' }}
         run: dotnet nuget push "artifacts/packages/*.nupkg" --source "https://nuget.pkg.github.com/Kuestenlogik/index.json" --api-key ${{ secrets.GITHUB_TOKEN }} --skip-duplicate
 
-      # nuget.org: only on real GA tags (no -rc), and only when the
-      # secret is configured. NUGET_API_KEY needs the
-      # 'Push new packages and package versions' scope.
+      # nuget.org: only when the secret is configured. NUGET_API_KEY
+      # needs the 'Push new packages and package versions' scope.
       - name: Publish to nuget.org
-        if: ${{ !contains(github.ref, '-rc') && env.NUGET_API_KEY != '' }}
+        if: ${{ github.ref_type == 'tag' && env.NUGET_API_KEY != '' }}
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: |
