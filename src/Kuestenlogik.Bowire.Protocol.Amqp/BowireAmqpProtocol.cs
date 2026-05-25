@@ -67,7 +67,7 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
     /// vendor-defined brand marks (MQTT's purple, Kafka's
     /// hex-cluster, etc.).
     /// </remarks>
-    public string IconSvg => """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><g transform="translate(-38.00395,-184.20569)"><rect style="fill:#a2b0d9" width="6.4565849" height="14.974796" x="46.661499" y="184.20569"/><path style="fill:#002585" d="m 46.669743,192.73682 6.410884,6.45658 H 38.00395 v -6.45658 z"/><rect style="fill:#000000" width="6" height="6" x="38.048462" y="184.20569"/><rect style="fill:#caccce" width="6.4565849" height="23.727749" x="55.318237" y="184.20569"/><path style="fill:#caccce" d="m 38.069535,184.23482 h 2.988509 2.988511 v 2.97153 2.97153 z"/><path d="m 55.370997,201.4825 6.40669,6.45658 h -23.76618 v -6.45658 z"/></g></svg>""";
+    public string IconSvg => """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><g transform="translate(-38.00395,-184.20569)"><path style="fill:#a2b0d9" d="m 46.625336,184.20569 h 6.456585 v 14.97479 l -6.456585,-6.44351 z"/><path style="fill:#002585" d="m 46.626352,192.72959 6.461507,6.45658 H 38.00395 v -6.45658 z"/><path d="m 38.048463,184.21303 5.959091,5.98243 h -5.959091 z"/><path style="fill:#caccce" d="m 55.318237,184.20569 h 6.456585 v 23.72775 l -6.456585,-6.44351 z"/><path style="fill:#caccce" d="m 38.049298,184.21436 h 2.967838 2.988511 v 2.97153 3.00989 z"/><path d="m 55.316758,201.4825 6.460929,6.45658 h -23.76618 v -6.45658 z"/></g></svg>""";
 
     /// <inheritdoc />
     public IReadOnlyList<BowirePluginSetting> Settings =>
