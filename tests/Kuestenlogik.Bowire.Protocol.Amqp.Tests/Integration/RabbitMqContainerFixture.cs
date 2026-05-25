@@ -25,6 +25,11 @@ namespace Kuestenlogik.Bowire.Protocol.Amqp.Tests.Integration;
 public sealed class RabbitMqContainerFixture : IAsyncLifetime
 {
     private readonly RabbitMqContainer _container = new RabbitMqBuilder("rabbitmq:3-management")
+        // Testcontainers.RabbitMq only exposes 5672 (AMQP wire) by
+        // default; the management plugin we need for discovery lives
+        // on 15672 and must be opened explicitly + bound to an
+        // ephemeral host port via assignRandomHostPort: true.
+        .WithPortBinding(15672, assignRandomHostPort: true)
         .Build();
 
     /// <summary>The full <c>amqp://...</c> URL the plugin can use as serverUrl.</summary>
