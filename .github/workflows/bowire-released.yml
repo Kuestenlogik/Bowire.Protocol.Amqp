@@ -1,0 +1,146 @@
+# Listens for a `bowire-released` repository_dispatch fired by
+# Kuestenlogik/Bowire's release.yml after a successful nuget.org push.
+# Bumps every Kuestenlogik.Bowire* PackageVersion in this repo to the
+# new version and opens a PR. The PR's CI gates the auto-merge; an
+# auto-tag workflow then bumps this repo's own version on merge.
+#
+# Drop verbatim into .github/workflows/bowire-released.yml on every
+# sibling repo that consumes the Kuestenlogik.Bowire NuGets.
+#
+# Requires BOWIRE_DISPATCH_TOKEN as an org-secret with:
+#   - Contents: Read and write
+#   - Pull requests: Read and write
+#
+# Versioning is async by design: this workflow only changes the
+# upstream dependency. Sibling's own version is bumped by the
+# auto-tag workflow that fires on the merge of the PR this opens.
+
+name: Bowire upstream release
+
+on:
+  repository_dispatch:
+    types: [bowire-released]
+  # Manual dispatch for testing / rerun:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Kuestenlogik.Bowire version to bump to'
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: bowire-released-${{ github.event.client_payload.version || github.event.inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    name: Bump Kuestenlogik.Bowire dependency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.BOWIRE_DISPATCH_TOKEN }}
+
+      - name: Resolve version
+        id: ver
+        run: |
+          V="${{ github.event.client_payload.version || github.event.inputs.version }}"
+          if [ -z "$V" ]; then
+            echo "::error::no version provided"
+            exit 1
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Target version: $V"
+
+      - name: Bump Kuestenlogik.Bowire* references
+        env:
+          NEW_V: ${{ steps.ver.outputs.version }}
+        run: |
+          # Two reference shapes can carry Kuestenlogik.Bowire* versions:
+          #   1. <PackageVersion> in Directory.Packages.props (CPM repos --
+          #      every Bowire.Protocol.* plugin, Bowire main, &c).
+          #   2. <PackageReference Version="..."> in individual .csproj
+          #      files (sample repos and templates keep these per-project
+          #      so a learner can copy one csproj and have it build
+          #      standalone without also taking Directory.Packages.props).
+          # Walk both. Idempotent / no-op when nothing matches.
+          touched=0
+          if [ -f Directory.Packages.props ]; then
+            n=$(grep -c 'Include="Kuestenlogik\.Bowire' Directory.Packages.props || true)
+            sed -i -E 's|(<PackageVersion[^>]*Include="Kuestenlogik\.Bowire(\.[A-Za-z]+)?"[^>]*Version=")[^"]+|\1'"${NEW_V}"'|g' Directory.Packages.props
+            touched=$((touched + n))
+            echo "Directory.Packages.props: touched $n PackageVersion line(s)."
+          fi
+          # Per-csproj PackageReference Version="..." -- skip ones that
+          # already point at the target version so the diff stays clean.
+          while IFS= read -r -d '' csproj; do
+            n=$(grep -cE 'PackageReference[^/]*Include="Kuestenlogik\.Bowire[^"]*"[^>]*Version="[^"]+' "$csproj" 2>/dev/null || echo 0)
+            if [ "$n" -gt 0 ]; then
+              sed -i -E 's|(<PackageReference[^>]*Include="Kuestenlogik\.Bowire(\.[A-Za-z]+)?"[^>]*Version=")[^"]+|\1'"${NEW_V}"'|g' "$csproj"
+              touched=$((touched + n))
+              echo "$csproj: touched $n PackageReference line(s)."
+            fi
+          done < <(find . -name '*.csproj' -not -path './bin/*' -not -path './obj/*' -print0)
+          echo "Total Kuestenlogik.Bowire* lines bumped: $touched"
+          git diff --shortstat
+
+      - name: Ensure labels exist
+        env:
+          GH_TOKEN: ${{ secrets.BOWIRE_DISPATCH_TOKEN }}
+        run: |
+          # gh pr create --label fails hard if the label doesn't exist
+          # on the repo. Create the two we use; ignore-failure to make
+          # this step idempotent.
+          gh api "repos/${{ github.repository }}/labels" \
+            -f name=dependencies -f color=0366d6 \
+            -f description='Pull requests that update a dependency' \
+            >/dev/null 2>&1 || true
+          gh api "repos/${{ github.repository }}/labels" \
+            -f name=bowire-cascade -f color=5319e7 \
+            -f description='Automated PR from Bowire main release cascade' \
+            >/dev/null 2>&1 || true
+
+      - name: Open PR + queue auto-merge
+        env:
+          GH_TOKEN: ${{ secrets.BOWIRE_DISPATCH_TOKEN }}
+          NEW_V: ${{ steps.ver.outputs.version }}
+        run: |
+          if git diff --quiet; then
+            echo "No changes -- already on $NEW_V or no matching lines."
+            exit 0
+          fi
+          BRANCH="chore/bump-bowire-${NEW_V}"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -b "$BRANCH"
+          # -A picks up whichever shape the bump touched -- Directory.Packages.props
+          # for CPM repos, the modified .csprojs for sample / template repos that
+          # use per-project PackageReference, or both.
+          git add -A
+          git commit -m "chore(deps): bump Kuestenlogik.Bowire to ${NEW_V}"
+          git push --force-with-lease origin "$BRANCH"
+          # Existing PR for this branch? Reuse it; otherwise create.
+          PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number')
+          if [ -z "$PR_NUMBER" ]; then
+            PR_URL=$(gh pr create \
+              --title "chore(deps): bump Kuestenlogik.Bowire to ${NEW_V}" \
+              --body "Automated bump triggered by [Bowire v${NEW_V}](https://github.com/Kuestenlogik/Bowire/releases/tag/v${NEW_V})." \
+              --label "dependencies" \
+              --label "bowire-cascade" \
+              --base main \
+              --head "$BRANCH")
+            PR_NUMBER=$(basename "$PR_URL")
+            echo "Opened #$PR_NUMBER"
+          else
+            echo "Reusing existing PR #$PR_NUMBER"
+          fi
+          # Queue auto-merge -- GitHub holds the merge until required
+          # checks pass. Rebase keeps the cascade PR's single bump
+          # commit 1:1 on main (matches the org-wide rebase-merge
+          # convention; squash would be identical for single-commit
+          # PRs but breaks consistency with the rest of the repo).
+          gh pr merge "$PR_NUMBER" --auto --rebase --delete-branch || \
+            echo "::warning::auto-merge could not be queued (branch protection? merge-queue?)"
