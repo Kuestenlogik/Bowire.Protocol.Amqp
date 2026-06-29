@@ -5,7 +5,7 @@
   <ItemGroup>
     <!-- Bowire contract package — IBowireProtocol + IBowireMockEmitter
          (the latter under Kuestenlogik.Bowire.Mocking). -->
-    <PackageVersion Include="Kuestenlogik.Bowire" Version="2.0.1" />
+    <PackageVersion Include="Kuestenlogik.Bowire" Version="2.1.0" />
 
     <!-- AMQP 0.9.1 wire (RabbitMQ, ActiveMQ Classic). The .NET-native
          client published by the RabbitMQ team is the de-facto standard
