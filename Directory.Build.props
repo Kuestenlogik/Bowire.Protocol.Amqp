@@ -43,9 +43,9 @@
          and that always wins for the published nupkg. The "-dev"
          suffix on this default is deliberate: any artefact built
          outside the tag-driven release pipeline carries it. -->
-    <Version>0.2.0-dev</Version>
-    <AssemblyVersion>0.2.0</AssemblyVersion>
-    <FileVersion>0.2.0</FileVersion>
+    <Version>1.0.6-dev</Version>
+    <AssemblyVersion>1.0.6</AssemblyVersion>
+    <FileVersion>1.0.6</FileVersion>
   </PropertyGroup>
 
   <PropertyGroup Condition="$(MSBuildProjectName.StartsWith('Kuestenlogik.Bowire.Protocol.'))">
