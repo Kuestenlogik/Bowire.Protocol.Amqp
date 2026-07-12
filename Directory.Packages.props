@@ -33,6 +33,6 @@
          covers Artemis for the 1.0 wire (no dedicated helper exists,
          we drive the official Artemis image directly). -->
     <PackageVersion Include="Testcontainers" Version="4.13.0" />
-    <PackageVersion Include="Testcontainers.RabbitMq" Version="4.12.0" />
+    <PackageVersion Include="Testcontainers.RabbitMq" Version="4.13.0" />
   </ItemGroup>
 </Project>
