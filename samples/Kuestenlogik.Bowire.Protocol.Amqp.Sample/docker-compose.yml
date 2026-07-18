@@ -1,0 +1,25 @@
+# RabbitMQ (AMQP 0.9.1) with the management plugin enabled for the Bowire
+# AMQP plugin demo. The plugin discovers the surface through the management
+# HTTP API on :15672 and drives publish/consume over the AMQP wire on :5672.
+#   Run:       docker compose up
+#   Tear down: docker compose down -v
+services:
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: bowire-sample-amqp
+    hostname: bowire-rabbit            # stable node name across restarts
+    environment:
+      # Dedicated non-guest user: guest is loopback-only and Docker
+      # port-mapping makes the connection look remote, so guest would be
+      # refused. This user is created with the administrator tag, so it
+      # works over the wire AND against the management API (discovery).
+      RABBITMQ_DEFAULT_USER: bowire
+      RABBITMQ_DEFAULT_PASS: bowire
+    ports:
+      - "5672:5672"     # AMQP 0.9.1 wire  (amqp://)
+      - "15672:15672"   # Management HTTP API (plugin discovery)
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10

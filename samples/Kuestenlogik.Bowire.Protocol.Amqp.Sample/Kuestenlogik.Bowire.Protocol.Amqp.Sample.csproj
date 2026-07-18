@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Kuestenlogik.Bowire.Protocol.Amqp.Sample</RootNamespace>
+    <!-- Sample-app code, not a library: CA1515 (make types internal) and
+         CA1812 (uninstantiated internal class) don't apply; CA1873 (defer
+         logger-arg evaluation) is overkill at this sample's volume. Matches
+         the Dis sibling sample verbatim. -->
+    <NoWarn>$(NoWarn);CA1515;CA1812;CA1873</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Embedded Bowire (workbench + plugin host) from the published
+         package — NO Version, Central Package Management pins it. The AMQP
+         plugin under test is referenced by source and force-loaded in
+         Program.cs so AddBowire()'s reflection scan finds it. -->
+    <PackageReference Include="Kuestenlogik.Bowire" />
+    <ProjectReference Include="..\..\src\Kuestenlogik.Bowire.Protocol.Amqp\Kuestenlogik.Bowire.Protocol.Amqp.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Resilient background publisher speaks AMQP 0.9.1 via the same
+         client the plugin uses; version from central PM. -->
+    <PackageReference Include="RabbitMQ.Client" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Update="amqp-catalogue.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

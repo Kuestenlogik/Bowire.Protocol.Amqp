@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "url": "amqp://bowire:bowire@localhost:5672",
+      "name": "Harbor broker (RabbitMQ)",
+      "protocols": ["amqp"],
+      "tags": ["sample", "amqp", "rabbitmq"]
+    }
+  ]
+}
