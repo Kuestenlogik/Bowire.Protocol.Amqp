@@ -5,6 +5,9 @@
   <Folder Name="/tests/">
     <Project Path="tests/Kuestenlogik.Bowire.Protocol.Amqp.Tests/Kuestenlogik.Bowire.Protocol.Amqp.Tests.csproj" />
   </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/Kuestenlogik.Bowire.Protocol.Amqp.Sample/Kuestenlogik.Bowire.Protocol.Amqp.Sample.csproj" />
+  </Folder>
   <Folder Name="/solution items/">
     <File Path="README.md" />
     <File Path="Directory.Build.props" />
