@@ -23,6 +23,9 @@
     <!-- Resilient background publisher speaks AMQP 0.9.1 via the same
          client the plugin uses; version from central PM. -->
     <PackageReference Include="RabbitMQ.Client" />
+    <!-- The 1.0 publisher. Same library the plugin's 1.0 wire uses; the
+         sample drives the broker directly so discovery has a surface. -->
+    <PackageReference Include="AMQPNetLite" />
   </ItemGroup>
 
   <ItemGroup>

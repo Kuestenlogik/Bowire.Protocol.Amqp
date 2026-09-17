@@ -24,7 +24,7 @@ summary: 'AMQP 0.9.1 + 1.0 in one sibling plugin. RabbitMQ via RabbitMQ.Client, 
 | URL scheme | Wire | Library | Discovery |
 |------------|------|---------|-----------|
 | `amqp://` / `amqps://` | AMQP **0.9.1** | RabbitMQ.Client | RabbitMQ Management HTTP API |
-| `amqp1://` / `amqps1://` | AMQP **1.0** | AMQPNetLite | Synthetic `Broker` service |
+| `amqp1://` / `amqps1://` | AMQP **1.0** | AMQPNetLite | Artemis management over AMQP; Service Bus ATOM feed; synthetic `Broker` otherwise |
 
 **Package:** `Kuestenlogik.Bowire.Protocol.Amqp` (sibling repo, not bundled with the CLI)
 
@@ -59,7 +59,13 @@ app.MapBowire(options =>
 
 **AMQP 0.9.1** — `AmqpDiscovery` hits the RabbitMQ Management HTTP API (`/api/queues`, `/api/exchanges`) on port 15672 by default. Each queue surfaces as a service with `publish` (Unary) and `consume` (ServerStreaming); each exchange surfaces as a service with `publish` per binding key.
 
-**AMQP 1.0** — surfaces a synthetic `Broker` service with generic `send` + `receive` methods. AMQP 1.0 doesn't have a standard discovery mechanism; broker-specific addressing rides on the metadata bag.
+**AMQP 1.0** — the spec defines no discovery, but the two brokers Bowire meets most each answer a question about themselves, and neither needs a credential the connection does not already carry.
+
+- **ActiveMQ Artemis** answers management requests over the AMQP connection itself: a message to `activemq.management` naming a resource and an operation, replied to on a temporary queue. Discovery asks it for `listAddresses` and `listQueues`. Each address becomes a service with `send`; each queue bound to it becomes a `receive:<queue>` on that service, addressed in Artemis' fully-qualified form (`address::queue`) so a multicast address with several subscriptions can be told apart. A queue named after its address — the ordinary anycast case — is the bare `receive`. The broker's own plumbing (`$sys.*`, `activemq.*`, temporary addresses) is hidden unless `showInternalServices` is on.
+- **Azure Service Bus** serves the namespace's ATOM management feed over HTTPS, signed with the shared-access key already in the URL (`amqps1://<keyName>:<key>@<ns>.servicebus.windows.net`). Queues become services with `send` + `receive`; topics become services with `send` and one `receive:<subscription>` per subscription, addressed `topic/Subscriptions/name`.
+- **Anything else** — Solace, Qpid, a bespoke 1.0 endpoint — keeps the synthetic `Broker` service with generic `send` + `receive`, and the target address rides on the `address` metadata key or the URL path, exactly as before.
+
+Which one to ask comes from the `amqp10Discovery` setting (per-connection: `?_amqp10Discovery=…`). `auto`, the default, reads the host — a `*.servicebus.*` name is Service Bus — and otherwise tries Artemis. Nothing answering is not an error: discovery falls back to the synthetic service rather than failing the connection, so a broker that is neither behaves as it always did.
 
 ## Invocation
 
@@ -83,7 +89,8 @@ Both wires honour the shared `__bowireMtls__` + `__bowireAmqpSasl__` marker keys
 ## Settings
 
 - `managementApiPort` (number, default `15672`) — RabbitMQ Management API port; per-URL override via `?_mgmtPort=…`
-- `discoveryTimeoutSeconds` (number, default `5`)
+- `discoveryTimeoutSeconds` (number, default `5`) — also bounds the Artemis management round-trip and the Service Bus feed
+- `amqp10Discovery` (select, default `auto`) — `auto` / `artemis` / `servicebus` / `none`; which broker's management surface an `amqp1://` endpoint is asked. Per-connection override: `?_amqp10Discovery=<value>`
 - `receiveTimeoutSeconds` (number, default `30`)
 
 ## Mock replay
@@ -92,6 +99,6 @@ Both wires honour the shared `__bowireMtls__` + `__bowireAmqpSasl__` marker keys
 
 ## Coverage
 
-First sibling plugin to clear stable. Live Testcontainers RabbitMQ integration suite under `[Trait("Category","Docker")]` covers both the protocol and the mock-emitter publish loop. Line coverage 79.5% (Mock emitter + security config 100%).
+First sibling plugin to clear stable. Live Testcontainers integration suites under `[Trait("Category","Docker")]` cover both wires: RabbitMQ for 0.9.1 (protocol + mock-emitter publish loop) and ActiveMQ Artemis for 1.0 (management discovery, multicast fan-out to each discovered queue, anycast round-trip). The Service Bus path is covered by unit tests against captured ATOM feeds and an independently computed SAS vector — a live namespace is a paid resource and is not in CI.
 
 See: [Recording](../features/recording.md), [Mock Server](../features/mock-server.md).

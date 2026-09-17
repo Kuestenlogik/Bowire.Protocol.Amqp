@@ -30,10 +30,26 @@ gRPC-Web. One plugin, one package, two wires.
   unconstrained `send`. The unnamed default exchange and the
   reserved `amq.*` family are hidden unless `showInternalServices`
   is on.
-- **1.0 discovery** is schema-less by spec — the plugin exposes a
-  synthetic `Broker` service with `send` (unary) and `receive`
-  (server-streaming). The target address comes from the
-  `address` metadata key (or the URL path) at invoke time.
+- **1.0 discovery** is schema-less by spec, so the plugin asks the
+  broker instead — with the credentials the connection already has:
+  - **Artemis** answers management requests over the AMQP connection
+    itself (`activemq.management`). Every address becomes a service
+    with `send`; every queue bound to it becomes `receive:<queue>`,
+    addressed `address::queue`. A queue named after its address is the
+    bare `receive`.
+  - **Azure Service Bus** serves its ATOM management feed over HTTPS,
+    signed with the shared-access key in the URL. Queues get
+    `send` + `receive`; topics get `send` and a `receive:<subscription>`
+    each, addressed `topic/Subscriptions/name`.
+  - **Anything else** keeps the synthetic `Broker` service with
+    `send` (unary) and `receive` (server-streaming), the target
+    address coming from the `address` metadata key (or the URL path)
+    at invoke time.
+
+  Which is asked comes from the `amqp10Discovery` setting
+  (`?_amqp10Discovery=auto|artemis|servicebus|none`). `auto` reads the
+  host and probes; a broker that answers nothing falls back to the
+  synthetic service rather than failing the connection.
 - **Invocation**:
   - 0.9.1: `basic.publish` on a fresh channel. Metadata maps onto
     `routingKey` / `contentType` / `messageId` / `correlationId` /

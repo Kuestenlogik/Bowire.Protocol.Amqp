@@ -56,7 +56,10 @@ internal sealed record AmqpEndpoint(
     // per-connection basis.
     int? ManagementPort = null,
     int? DiscoveryTimeoutSeconds = null,
-    int? ReceiveTimeoutSeconds = null)
+    int? ReceiveTimeoutSeconds = null,
+    // Which 1.0 broker this is, for discovery. Null means "the setting
+    // decides", which itself defaults to working it out from the host.
+    Amqp10Flavour? Flavour = null)
 {
     /// <summary>
     /// Try to parse a Bowire-style AMQP server URL. Returns <c>false</c> on
@@ -114,7 +117,7 @@ internal sealed record AmqpEndpoint(
         // plugin reading a URL that an newer workbench wrote with extra
         // tweaks should keep working). Invalid integer values fall back
         // to null → plugin defaults.
-        var (mgmtPort, discoveryTimeout, receiveTimeout) = ParseSettingsQuery(uri.Query);
+        var (mgmtPort, discoveryTimeout, receiveTimeout, flavour) = ParseSettingsQuery(uri.Query);
 
         endpoint = new AmqpEndpoint(
             Wire: wire,
@@ -126,16 +129,18 @@ internal sealed record AmqpEndpoint(
             AddressOrVhost: tail,
             ManagementPort: mgmtPort,
             DiscoveryTimeoutSeconds: discoveryTimeout,
-            ReceiveTimeoutSeconds: receiveTimeout);
+            ReceiveTimeoutSeconds: receiveTimeout,
+            Flavour: flavour);
         return true;
     }
 
-    private static (int? Mgmt, int? DiscoveryTimeout, int? ReceiveTimeout) ParseSettingsQuery(string query)
+    private static (int? Mgmt, int? DiscoveryTimeout, int? ReceiveTimeout, Amqp10Flavour? Flavour) ParseSettingsQuery(string query)
     {
         if (string.IsNullOrEmpty(query) || query == "?")
-            return (null, null, null);
+            return (null, null, null, null);
 
         int? mgmt = null, discovery = null, receive = null;
+        Amqp10Flavour? flavour = null;
         // Hand-roll instead of HttpUtility / QueryHelpers to stay free of
         // a System.Web / Microsoft.AspNetCore reference at plugin scope.
         foreach (var raw in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
@@ -159,8 +164,11 @@ internal sealed record AmqpEndpoint(
                 case "_receiveTimeout":
                     if (int.TryParse(val, out var r) && r > 0) receive = r;
                     break;
+                case "_amqp10Discovery":
+                    flavour = Amqp10Flavours.Parse(val);
+                    break;
             }
         }
-        return (mgmt, discovery, receive);
+        return (mgmt, discovery, receive, flavour);
     }
 }

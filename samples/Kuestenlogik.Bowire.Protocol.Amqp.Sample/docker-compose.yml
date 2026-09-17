@@ -1,6 +1,13 @@
-# RabbitMQ (AMQP 0.9.1) with the management plugin enabled for the Bowire
-# AMQP plugin demo. The plugin discovers the surface through the management
-# HTTP API on :15672 and drives publish/consume over the AMQP wire on :5672.
+# The two brokers the Bowire AMQP plugin covers, one per wire:
+#
+#   * RabbitMQ (AMQP 0.9.1) with the management plugin — discovery goes
+#     through the management HTTP API on :15672, publish/consume over the
+#     wire on :5672.
+#   * ActiveMQ Artemis (AMQP 1.0) — discovery goes over the AMQP
+#     connection itself (the broker answers management requests at
+#     `activemq.management`), so :5673 is the only port it needs. The
+#     console on :8162 is there for a human, not for the plugin.
+#
 #   Run:       docker compose up
 #   Tear down: docker compose down -v
 services:
@@ -22,4 +29,24 @@ services:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
       timeout: 5s
+      retries: 10
+
+  artemis:
+    image: apache/activemq-artemis:2.42.0
+    container_name: bowire-sample-amqp1
+    environment:
+      ARTEMIS_USER: bowire
+      ARTEMIS_PASSWORD: bowire
+      # Let the sample's publisher create `harbor` and its queues on
+      # first send; without this a fresh broker has only DLQ and
+      # ExpiryQueue and there is nothing to discover.
+      ANONYMOUS_LOGIN: "false"
+    ports:
+      - "5673:5672"     # AMQP 1.0 wire (amqp1://) — mapped off 5672 so
+                        # both brokers can run at once
+      - "8162:8161"     # Artemis console (not used by the plugin)
+    healthcheck:
+      test: ["CMD-SHELL", "/var/lib/artemis-instance/bin/artemis check node --user bowire --password bowire || exit 1"]
+      interval: 10s
+      timeout: 10s
       retries: 10

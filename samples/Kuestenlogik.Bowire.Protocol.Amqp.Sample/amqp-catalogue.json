@@ -3,9 +3,15 @@
   "entries": [
     {
       "url": "amqp://bowire:bowire@localhost:5672",
-      "name": "Harbor broker (RabbitMQ)",
+      "name": "Harbor broker (RabbitMQ, AMQP 0.9.1)",
       "protocols": ["amqp"],
       "tags": ["sample", "amqp", "rabbitmq"]
+    },
+    {
+      "url": "amqp1://bowire:bowire@localhost:5673",
+      "name": "Harbor broker (Artemis, AMQP 1.0)",
+      "protocols": ["amqp"],
+      "tags": ["sample", "amqp", "artemis", "amqp-1-0"]
     }
   ]
 }

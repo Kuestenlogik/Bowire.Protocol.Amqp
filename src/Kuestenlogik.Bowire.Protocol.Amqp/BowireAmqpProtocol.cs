@@ -7,6 +7,7 @@ using System.Text;
 using Amqp;
 using Kuestenlogik.Bowire;
 using Kuestenlogik.Bowire.Models;
+using Kuestenlogik.Bowire.Plugins;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
@@ -46,6 +47,26 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
     internal const int DefaultManagementPort = 15672;
     internal const int DefaultDiscoveryTimeoutSeconds = 5;
     internal const int DefaultReceiveTimeoutSeconds = 30;
+    internal const string Amqp10DiscoverySettingKey = "amqp10Discovery";
+
+    /// <summary>
+    /// Resolved in <see cref="Initialize"/>; null when the host
+    /// registered none — the CLI's case, and every embedded host that
+    /// never adopted workspace settings. The declared defaults then
+    /// stand, which is what a plugin nobody configured should do.
+    /// </summary>
+    private IBowirePluginSettings? _settings;
+
+    /// <summary>
+    /// One client for every Service Bus namespace this process
+    /// discovers. HttpClient is built to be shared; a new one per
+    /// discovery would burn a socket per refresh.
+    /// </summary>
+    private static readonly HttpClient s_managementHttp = new();
+
+    /// <inheritdoc />
+    public void Initialize(IServiceProvider? serviceProvider)
+        => _settings = serviceProvider?.GetService(typeof(IBowirePluginSettings)) as IBowirePluginSettings;
 
     /// <inheritdoc />
     public string Name => "AMQP";
@@ -81,6 +102,15 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
         new("receiveTimeoutSeconds", "Receive timeout",
             $"Max seconds the streaming consume/receive operation waits between frames before tearing down. Per-connection override: `?_receiveTimeout=<n>` in the URL or `receiveTimeoutSeconds` in metadata. Default {DefaultReceiveTimeoutSeconds}.",
             "number", DefaultReceiveTimeoutSeconds),
+        new(Amqp10DiscoverySettingKey, "AMQP 1.0 discovery",
+            "Which broker's management surface to ask when discovering an `amqp1://` endpoint. AMQP 1.0 has no discovery of its own, but Artemis answers management requests over the AMQP connection itself and Service Bus serves an ATOM feed signed with the key already in the URL. `auto` picks Service Bus for a `*.servicebus.*` host and tries Artemis otherwise, falling back to the generic Broker service when neither answers. Per-connection override: `?_amqp10Discovery=<value>`.",
+            "select", "auto",
+            [
+                new BowirePluginSettingOption("auto", "Auto — by host, then probe"),
+                new BowirePluginSettingOption("artemis", "ActiveMQ Artemis"),
+                new BowirePluginSettingOption("servicebus", "Azure Service Bus"),
+                new BowirePluginSettingOption("none", "None — generic Broker service"),
+            ]),
     ];
 
     /// <inheritdoc />
@@ -92,7 +122,7 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
         return endpoint.Wire switch
         {
             AmqpWire.V091 => await DiscoverV091Async(endpoint, showInternalServices, ct).ConfigureAwait(false),
-            AmqpWire.V10 => DiscoverV10(),
+            AmqpWire.V10 => await DiscoverV10Async(endpoint, showInternalServices, ct).ConfigureAwait(false),
             _ => throw new InvalidOperationException($"Unknown AMQP wire: {endpoint.Wire}"),
         };
     }
@@ -359,31 +389,243 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
     // 1.0 — AMQPNetLite implementation
     // -------------------------------------------------------------------
 
-    private static List<BowireServiceInfo> DiscoverV10()
+    /// <summary>
+    /// AMQP 1.0 discovery. The spec has none — but the two brokers Bowire
+    /// meets most each answer a question about themselves, and neither
+    /// needs a credential the connection does not already carry:
+    /// Artemis takes management requests over the AMQP connection itself,
+    /// Service Bus serves an ATOM feed signed with the shared-access key
+    /// that is already in the URL. Which one to ask comes from the
+    /// <c>amqp10Discovery</c> setting (per-connection:
+    /// <c>?_amqp10Discovery=…</c>); <c>auto</c> reads the host and probes.
+    /// Whatever fails to answer falls back to the generic
+    /// <see cref="BrokerServiceName"/> service, so a broker that is
+    /// neither — Solace, Qpid, a bespoke 1.0 endpoint — behaves exactly
+    /// as it did before.
+    /// </summary>
+    private async Task<List<BowireServiceInfo>> DiscoverV10Async(
+        AmqpEndpoint endpoint, bool showInternalServices, CancellationToken ct)
     {
-        // AMQP 1.0 has no broker-side schema concept — the spec doesn't
-        // define a way to enumerate addresses from the wire. The plugin
-        // returns a synthetic Broker service so the workbench has
-        // something to anchor send/receive against; the actual target
-        // address comes from the URL path or the `address` metadata
-        // key at invoke time.
-        //
-        // Broker-specific management APIs that could lift this (Azure
-        // Service Bus management API + Bearer auth, Artemis Jolokia HTTP
-        // bridge, RabbitMQ-with-1.0-extension Management plugin) sit
-        // outside the AMQP 1.0 standard. Adding any of them belongs in
-        // a follow-up plugin (`Bowire.Protocol.Amqp.ServiceBus`,
-        // `Bowire.Protocol.Amqp.Artemis`) so the auth surface area for
-        // those vendor-specific paths doesn't bleed into the core
-        // AMQP plugin's contract.
-        return new List<BowireServiceInfo>
+        var requested = endpoint.Flavour
+            ?? Amqp10Flavours.Parse(_settings?.GetValue(Id, Amqp10DiscoverySettingKey));
+        if (requested == Amqp10Flavour.None) return SyntheticBrokerServices();
+
+        var timeout = TimeSpan.FromSeconds(
+            endpoint.DiscoveryTimeoutSeconds ?? DefaultDiscoveryTimeoutSeconds);
+        var flavour = Amqp10Flavours.Resolve(requested, endpoint.Host);
+
+        if (flavour == Amqp10Flavour.ServiceBus)
         {
-            new(BrokerServiceName, "amqp", new List<BowireMethodInfo>
+            var entities = await ServiceBusManagement
+                .ListEntitiesAsync(s_managementHttp, endpoint, timeout, ct).ConfigureAwait(false);
+            if (entities is not null) return BuildServiceBusServices(entities, showInternalServices);
+            // An explicit `servicebus` that could not be read is the
+            // operator's answer about which broker this is, so there is
+            // nothing else to try; `auto` on a servicebus host is the
+            // same conclusion by a different route.
+            return SyntheticBrokerServices();
+        }
+
+        var addresses = await TryListArtemisAddressesAsync(endpoint, timeout, ct).ConfigureAwait(false);
+        if (addresses is not null) return BuildArtemisServices(addresses, showInternalServices);
+        return SyntheticBrokerServices();
+    }
+
+    /// <summary>
+    /// Ask the broker's management address, on a connection of its own.
+    /// Null when the endpoint is not Artemis — no address, no answer, or
+    /// a connection that could not be opened at all (a broker that is
+    /// down is not a broker whose shape we can guess).
+    /// </summary>
+    private static async Task<List<ArtemisAddress>?> TryListArtemisAddressesAsync(
+        AmqpEndpoint endpoint, TimeSpan timeout, CancellationToken ct)
+    {
+        Connection? connection = null;
+        try
+        {
+            var factory = new global::Amqp.ConnectionFactory();
+            connection = await factory.CreateAsync(BuildAmqp10Address(endpoint))
+                .WaitAsync(timeout, ct).ConfigureAwait(false);
+            return await ArtemisManagement.ListAddressesAsync(connection, timeout, ct).ConfigureAwait(false);
+        }
+        catch (AmqpException)
+        {
+            return null;
+        }
+        catch (System.Net.Sockets.SocketException)
+        {
+            return null;
+        }
+        catch (TimeoutException)
+        {
+            return null;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return null;
+        }
+        finally
+        {
+            if (connection is not null)
             {
-                BuildSendMethod(SendMethodName, BrokerServiceName),
-                BuildReceiveMethod(ReceiveMethodName, BrokerServiceName),
-            }),
+                try { await connection.CloseAsync().ConfigureAwait(false); }
+                catch (AmqpException) { /* closing a broken connection */ }
+            }
+        }
+    }
+
+    /// <summary>The generic surface: what every 1.0 endpoint had before, and what an unrecognised one still has.</summary>
+    private static List<BowireServiceInfo> SyntheticBrokerServices() =>
+    [
+        new(BrokerServiceName, "amqp",
+        [
+            BuildSendMethod(SendMethodName, BrokerServiceName),
+            BuildReceiveMethod(ReceiveMethodName, BrokerServiceName),
+        ])
+        {
+            Description = "AMQP 1.0 endpoint without a readable broker surface — send and receive against an address you name (metadata key `address`, or the URL path).",
+        },
+    ];
+
+    /// <summary>
+    /// Artemis' addresses as services. An address is where a message is
+    /// sent; a queue bound to it is where one is received, addressed in
+    /// Artemis' fully-qualified form (<c>address::queue</c>) so a
+    /// multicast address with several subscriptions can be told apart.
+    /// The queue whose name is its address' — the ordinary anycast case —
+    /// is also reachable as the bare <c>receive</c>.
+    /// </summary>
+    internal static List<BowireServiceInfo> BuildArtemisServices(
+        List<ArtemisAddress> addresses, bool showInternalServices)
+    {
+        var services = new List<BowireServiceInfo>();
+        foreach (var address in addresses.OrderBy(a => a.Name, StringComparer.Ordinal))
+        {
+            // Internal plumbing (`$sys.*`, activemq.notifications) and the
+            // temporary addresses a dynamic reply queue leaves behind —
+            // including the one this discovery just made — are noise on a
+            // sidebar. Same rule the 0.9.1 path applies to `amq.*`.
+            if (!showInternalServices && (address.Internal || address.Temporary || IsArtemisInternal(address.Name)))
+                continue;
+
+            var methods = new List<BowireMethodInfo> { BuildSendMethod(SendMethodName, address.Name) };
+            foreach (var queue in address.Queues.OrderBy(q => q.Name, StringComparer.Ordinal))
+            {
+                if (!showInternalServices && (queue.Internal || queue.Temporary)) continue;
+                methods.Add(string.Equals(queue.Name, address.Name, StringComparison.Ordinal)
+                    ? BuildReceiveMethod(ReceiveMethodName, address.Name)
+                    : BuildReceiveMethod($"{ReceiveMethodName}:{queue.Name}", address.Name));
+            }
+            // An address with no queue can still be sent to — a multicast
+            // address nobody subscribes to yet accepts and drops.
+            if (methods.Count == 1)
+                methods.Add(BuildReceiveMethod(ReceiveMethodName, address.Name));
+
+            // No Source: the host's discovery probe stamps it with the
+            // plugin id for every service it collects. Where a service
+            // came from is in its description, which survives and is
+            // what the sidebar shows.
+            services.Add(new BowireServiceInfo(address.Name, "amqp", methods)
+            {
+                Description = DescribeArtemisAddress(address),
+            });
+        }
+        return services.Count > 0 ? services : SyntheticBrokerServices();
+    }
+
+    private static string DescribeArtemisAddress(ArtemisAddress address)
+    {
+        var routing = address.RoutingTypes.Count > 0
+            ? string.Join("/", address.RoutingTypes)
+            : "ANYCAST";
+        var queues = address.Queues.Count switch
+        {
+            0 => "no queues",
+            1 => "1 queue",
+            var n => $"{n} queues",
         };
+        return $"Artemis address ({routing}, {queues})";
+    }
+
+    // Artemis' own plumbing. `$sys.*` is the broker's internal namespace,
+    // `activemq.*` its notification and management addresses — including
+    // the one discovery just spoke to.
+    private static bool IsArtemisInternal(string name)
+        => name.StartsWith("$sys.", StringComparison.Ordinal)
+        || name.StartsWith("activemq.", StringComparison.Ordinal);
+
+    /// <summary>
+    /// A Service Bus namespace as services: a queue is a service with
+    /// send + receive, a topic is a service with send and one receive per
+    /// subscription (addressed <c>topic/Subscriptions/name</c>, which is
+    /// what the AMQP link wants).
+    /// </summary>
+    internal static List<BowireServiceInfo> BuildServiceBusServices(
+        List<ServiceBusEntity> entities, bool showInternalServices)
+    {
+        var services = new List<BowireServiceInfo>();
+        foreach (var entity in entities.OrderBy(e => e.Name, StringComparer.Ordinal))
+        {
+            if (!showInternalServices && entity.Name.StartsWith('$')) continue;
+
+            var methods = new List<BowireMethodInfo> { BuildSendMethod(SendMethodName, entity.Name) };
+            if (entity.Kind == ServiceBusEntityKind.Queue)
+            {
+                methods.Add(BuildReceiveMethod(ReceiveMethodName, entity.Name));
+            }
+            else
+            {
+                foreach (var subscription in entity.Subscriptions.OrderBy(s => s, StringComparer.Ordinal))
+                    methods.Add(BuildReceiveMethod($"{ReceiveMethodName}:{subscription}", entity.Name));
+            }
+
+            services.Add(new BowireServiceInfo(entity.Name, "amqp", methods)
+            {
+                Description = entity.Kind == ServiceBusEntityKind.Queue
+                    ? "Service Bus queue"
+                    : $"Service Bus topic ({(entity.Subscriptions.Count == 1 ? "1 subscription" : entity.Subscriptions.Count + " subscriptions")})",
+            });
+        }
+        return services.Count > 0 ? services : SyntheticBrokerServices();
+    }
+
+    /// <summary>
+    /// The address a 1.0 send or receive works against. The method's
+    /// suffix names a queue (Artemis) or a subscription (Service Bus) on
+    /// the service's address; metadata still wins over both, and an
+    /// endpoint whose URL carries a path keeps using it when the service
+    /// is the synthetic broker.
+    /// </summary>
+    internal static string ResolveV10Address(
+        AmqpEndpoint endpoint, string service, string method, Dictionary<string, string>? metadata)
+    {
+        if (ReadStringMeta(metadata, "address") is { } explicitAddress) return explicitAddress;
+
+        var suffix = ExtractReceiveSuffix(method);
+        if (suffix is not null && !string.Equals(service, BrokerServiceName, StringComparison.Ordinal))
+        {
+            // Service Bus wants the subscription path; Artemis wants the
+            // fully-qualified queue name. A subscription name cannot
+            // contain '/', and an Artemis queue name cannot contain
+            // "::", so the two shapes stay apart — but the endpoint's
+            // flavour is what actually decides, and the host is the only
+            // part of it discovery and invoke both see.
+            return Amqp10Flavours.IsServiceBusHost(endpoint.Host)
+                ? $"{service}/Subscriptions/{suffix}"
+                : $"{service}::{suffix}";
+        }
+
+        if (!string.Equals(service, BrokerServiceName, StringComparison.Ordinal)) return service;
+        return string.IsNullOrEmpty(endpoint.AddressOrVhost) ? service : endpoint.AddressOrVhost;
+    }
+
+    /// <summary>"receive:orders" → "orders". Bare "receive", or any other method, → null.</summary>
+    private static string? ExtractReceiveSuffix(string method)
+    {
+        const string receivePrefix = ReceiveMethodName + ":";
+        return method.StartsWith(receivePrefix, StringComparison.Ordinal)
+            ? method[receivePrefix.Length..]
+            : null;
     }
 
     private static BowireMethodInfo BuildSendMethod(string name, string service) => new(
@@ -416,8 +658,7 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
         AmqpEndpoint endpoint, string service, string method, byte[] body,
         Dictionary<string, string>? metadata, Stopwatch sw, CancellationToken ct)
     {
-        var address = ReadStringMeta(metadata, "address")
-            ?? (string.IsNullOrEmpty(endpoint.AddressOrVhost) ? service : endpoint.AddressOrVhost);
+        var address = ResolveV10Address(endpoint, service, method, metadata);
 
         var amqpFactory = new global::Amqp.ConnectionFactory();
         metadata = AmqpSecurityConfig.ApplyV10(amqpFactory, metadata);
@@ -470,8 +711,7 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
         Dictionary<string, string>? metadata, int receiveTimeoutSeconds,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        var address = ReadStringMeta(metadata, "address")
-            ?? (string.IsNullOrEmpty(endpoint.AddressOrVhost) ? service : endpoint.AddressOrVhost);
+        var address = ResolveV10Address(endpoint, service, method, metadata);
 
         var amqpFactory = new global::Amqp.ConnectionFactory();
         metadata = AmqpSecurityConfig.ApplyV10(amqpFactory, metadata);
