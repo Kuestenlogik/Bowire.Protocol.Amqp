@@ -406,13 +406,11 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
     private async Task<List<BowireServiceInfo>> DiscoverV10Async(
         AmqpEndpoint endpoint, bool showInternalServices, CancellationToken ct)
     {
-        var requested = endpoint.Flavour
-            ?? Amqp10Flavours.Parse(_settings?.GetValue(Id, Amqp10DiscoverySettingKey));
-        if (requested == Amqp10Flavour.None) return SyntheticBrokerServices();
+        var flavour = ResolvedFlavour(endpoint);
+        if (flavour == Amqp10Flavour.None) return SyntheticBrokerServices();
 
         var timeout = TimeSpan.FromSeconds(
             endpoint.DiscoveryTimeoutSeconds ?? DefaultDiscoveryTimeoutSeconds);
-        var flavour = Amqp10Flavours.Resolve(requested, endpoint.Host);
 
         if (flavour == Amqp10Flavour.ServiceBus)
         {
@@ -590,13 +588,24 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
     }
 
     /// <summary>
+    /// Which 1.0 broker this endpoint is, by the route the operator's
+    /// answers take: the URL first, then the workspace setting, then the
+    /// host. Discovery and invoke both go through here, so a connection
+    /// cannot be discovered as one broker and addressed as another.
+    /// </summary>
+    private Amqp10Flavour ResolvedFlavour(AmqpEndpoint endpoint)
+        => Amqp10Flavours.Resolve(
+            endpoint.Flavour ?? Amqp10Flavours.Parse(_settings?.GetValue(Id, Amqp10DiscoverySettingKey)),
+            endpoint.Host);
+
+    /// <summary>
     /// The address a 1.0 send or receive works against. The method's
     /// suffix names a queue (Artemis) or a subscription (Service Bus) on
     /// the service's address; metadata still wins over both, and an
     /// endpoint whose URL carries a path keeps using it when the service
     /// is the synthetic broker.
     /// </summary>
-    internal static string ResolveV10Address(
+    internal string ResolveV10Address(
         AmqpEndpoint endpoint, string service, string method, Dictionary<string, string>? metadata)
     {
         if (ReadStringMeta(metadata, "address") is { } explicitAddress) return explicitAddress;
@@ -605,12 +614,11 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
         if (suffix is not null && !string.Equals(service, BrokerServiceName, StringComparison.Ordinal))
         {
             // Service Bus wants the subscription path; Artemis wants the
-            // fully-qualified queue name. A subscription name cannot
-            // contain '/', and an Artemis queue name cannot contain
-            // "::", so the two shapes stay apart — but the endpoint's
-            // flavour is what actually decides, and the host is the only
-            // part of it discovery and invoke both see.
-            return Amqp10Flavours.IsServiceBusHost(endpoint.Host)
+            // fully-qualified queue name. Which one is asked is the same
+            // question discovery asked, answered the same way — reading
+            // the host alone was wrong for anything that is Service Bus
+            // without saying so in its name, which is every emulator.
+            return ResolvedFlavour(endpoint) == Amqp10Flavour.ServiceBus
                 ? $"{service}/Subscriptions/{suffix}"
                 : $"{service}::{suffix}";
         }
@@ -654,7 +662,7 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
         Description = "Stream messages from the queue (0.9.1) or address (1.0). Metadata keys override queue / address / autoAck / receiveTimeoutSeconds.",
     };
 
-    private static async Task<InvokeResult> InvokeV10Async(
+    private async Task<InvokeResult> InvokeV10Async(
         AmqpEndpoint endpoint, string service, string method, byte[] body,
         Dictionary<string, string>? metadata, Stopwatch sw, CancellationToken ct)
     {
@@ -706,7 +714,7 @@ public sealed class BowireAmqpProtocol : IBowireProtocol
         }
     }
 
-    private static async IAsyncEnumerable<string> ReceiveV10Async(
+    private async IAsyncEnumerable<string> ReceiveV10Async(
         AmqpEndpoint endpoint, string service, string method,
         Dictionary<string, string>? metadata, int receiveTimeoutSeconds,
         [EnumeratorCancellation] CancellationToken ct)

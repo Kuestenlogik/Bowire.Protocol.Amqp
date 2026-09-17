@@ -40,7 +40,9 @@ gRPC-Web. One plugin, one package, two wires.
   - **Azure Service Bus** serves its ATOM management feed over HTTPS,
     signed with the shared-access key in the URL. Queues get
     `send` + `receive`; topics get `send` and a `receive:<subscription>`
-    each, addressed `topic/Subscriptions/name`.
+    each, addressed `topic/Subscriptions/name`. Microsoft's emulator
+    serves the same feed over HTTP on its own port; point at it with
+    `?_amqp10Discovery=servicebus&_mgmtPort=5300`.
   - **Anything else** keeps the synthetic `Broker` service with
     `send` (unary) and `receive` (server-streaming), the target
     address coming from the `address` metadata key (or the URL path)

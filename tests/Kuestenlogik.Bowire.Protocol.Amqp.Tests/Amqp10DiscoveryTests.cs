@@ -285,24 +285,24 @@ public sealed class Amqp10DiscoveryTests
     {
         Assert.True(AmqpEndpoint.TryParse("amqp1://artemis:artemis@localhost:5672", out var artemis));
         Assert.Equal("harbor::harbor.cranes",
-            BowireAmqpProtocol.ResolveV10Address(artemis, "harbor", "receive:harbor.cranes", null));
-        Assert.Equal("harbor", BowireAmqpProtocol.ResolveV10Address(artemis, "harbor", "send", null));
-        Assert.Equal("orders", BowireAmqpProtocol.ResolveV10Address(artemis, "orders", "receive", null));
+            new BowireAmqpProtocol().ResolveV10Address(artemis, "harbor", "receive:harbor.cranes", null));
+        Assert.Equal("harbor", new BowireAmqpProtocol().ResolveV10Address(artemis, "harbor", "send", null));
+        Assert.Equal("orders", new BowireAmqpProtocol().ResolveV10Address(artemis, "orders", "receive", null));
 
         Assert.True(AmqpEndpoint.TryParse("amqps1://key:secret@ns.servicebus.windows.net", out var sb));
         Assert.Equal("events/Subscriptions/audit",
-            BowireAmqpProtocol.ResolveV10Address(sb, "events", "receive:audit", null));
-        Assert.Equal("events", BowireAmqpProtocol.ResolveV10Address(sb, "events", "send", null));
+            new BowireAmqpProtocol().ResolveV10Address(sb, "events", "receive:audit", null));
+        Assert.Equal("events", new BowireAmqpProtocol().ResolveV10Address(sb, "events", "send", null));
     }
 
     [Fact]
     public void The_address_metadata_still_wins_and_the_generic_service_keeps_the_url_path()
     {
         Assert.True(AmqpEndpoint.TryParse("amqp1://localhost:5672/inbox", out var endpoint));
-        Assert.Equal("elsewhere", BowireAmqpProtocol.ResolveV10Address(
+        Assert.Equal("elsewhere", new BowireAmqpProtocol().ResolveV10Address(
             endpoint, "harbor", "receive:harbor.cranes",
             new Dictionary<string, string> { ["address"] = "elsewhere" }));
-        Assert.Equal("inbox", BowireAmqpProtocol.ResolveV10Address(
+        Assert.Equal("inbox", new BowireAmqpProtocol().ResolveV10Address(
             endpoint, BowireAmqpProtocol.BrokerServiceName, BowireAmqpProtocol.SendMethodName, null));
     }
 
@@ -350,5 +350,47 @@ public sealed class Amqp10DiscoveryTests
         Assert.Equal("auto", setting.DefaultValue);
         Assert.Equal(["artemis", "auto", "none", "servicebus"],
             (setting.Options ?? []).Select(o => o.Value).Order(StringComparer.Ordinal));
+    }
+
+    // ---- Where the management feed lives -------------------------------
+
+    [Fact]
+    public void A_live_namespace_is_https_on_the_implicit_port()
+    {
+        Assert.True(AmqpEndpoint.TryParse(
+            "amqps1://key:secret@contoso.servicebus.windows.net", out var endpoint));
+
+        Assert.Equal("https://contoso.servicebus.windows.net/", ServiceBusManagement.ManagementBaseUri(endpoint).AbsoluteUri);
+    }
+
+    [Fact]
+    public void The_wire_port_does_not_leak_into_the_management_url()
+    {
+        // 5671 is where AMQP is, not where the feed is.
+        Assert.True(AmqpEndpoint.TryParse(
+            "amqps1://key:secret@contoso.servicebus.windows.net:5671", out var endpoint));
+
+        Assert.Equal("https://contoso.servicebus.windows.net/", ServiceBusManagement.ManagementBaseUri(endpoint).AbsoluteUri);
+    }
+
+    [Fact]
+    public void An_emulator_is_plain_http_on_the_port_it_was_given()
+    {
+        // The official emulator serves the same feed over HTTP on 5300,
+        // which no part of the AMQP URL implies. Both halves come from
+        // keys the plugin already has.
+        Assert.True(AmqpEndpoint.TryParse(
+            "amqp1://key:secret@127.0.0.1:5672?_amqp10Discovery=servicebus&_mgmtPort=5300", out var endpoint));
+
+        Assert.Equal("http://127.0.0.1:5300/", ServiceBusManagement.ManagementBaseUri(endpoint).AbsoluteUri);
+    }
+
+    [Fact]
+    public void A_management_port_on_a_tls_endpoint_stays_https()
+    {
+        Assert.True(AmqpEndpoint.TryParse(
+            "amqps1://key:secret@gateway.internal:5671?_mgmtPort=8443", out var endpoint));
+
+        Assert.Equal("https://gateway.internal:8443/", ServiceBusManagement.ManagementBaseUri(endpoint).AbsoluteUri);
     }
 }

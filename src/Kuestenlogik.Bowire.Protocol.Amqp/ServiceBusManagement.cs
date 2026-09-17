@@ -62,7 +62,7 @@ internal static class ServiceBusManagement
         ArgumentNullException.ThrowIfNull(endpoint);
         if (string.IsNullOrEmpty(endpoint.UserName) || string.IsNullOrEmpty(endpoint.Password)) return null;
 
-        var baseUri = new Uri($"https://{endpoint.Host}/");
+        var baseUri = ManagementBaseUri(endpoint);
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(timeout);
 
@@ -88,6 +88,46 @@ internal static class ServiceBusManagement
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Where the namespace's management feed lives.
+    /// </summary>
+    /// <remarks>
+    /// A real namespace is <c>https://&lt;ns&gt;.servicebus.windows.net/</c>
+    /// on the implicit port, which is what an <c>amqps1://</c> endpoint
+    /// with no management port produces — the shape this method was
+    /// hard-coded to before.
+    /// <para>
+    /// The official emulator is the reason it is not hard-coded any more.
+    /// It serves the same feed over plain HTTP on its own port (5300 by
+    /// default), which no part of the AMQP URL implies: the wire port is
+    /// 5672 and the scheme is <c>amqp1://</c>. Both fall out of keys this
+    /// plugin already has — <c>_mgmtPort</c> names the management port
+    /// exactly as it does for RabbitMQ on the 0.9.1 side, and TLS on the
+    /// connection picks the scheme. So
+    /// <c>amqp1://user:key@127.0.0.1:5672?_amqp10Discovery=servicebus&amp;_mgmtPort=5300</c>
+    /// discovers against the emulator, and nothing about a live namespace
+    /// changes.
+    /// </para>
+    /// <para>
+    /// The emulator does not validate the SAS header — a bogus token gets
+    /// a 200 — so pointing at it proves the feed shape and the service
+    /// composition, not the signature. That part stays covered by the
+    /// computed vector in <c>Amqp10DiscoveryTests</c>.
+    /// </para>
+    /// </remarks>
+    internal static Uri ManagementBaseUri(AmqpEndpoint endpoint)
+    {
+        ArgumentNullException.ThrowIfNull(endpoint);
+        var builder = new UriBuilder(endpoint.UseTls ? Uri.UriSchemeHttps : Uri.UriSchemeHttp, endpoint.Host)
+        {
+            Path = "/",
+        };
+        // Left at -1 the builder emits the scheme's default port, i.e.
+        // nothing — which is what a live namespace wants.
+        if (endpoint.ManagementPort is { } port) builder.Port = port;
+        return builder.Uri;
     }
 
     /// <summary>The entity names in one ATOM feed, or null when the request was refused.</summary>
