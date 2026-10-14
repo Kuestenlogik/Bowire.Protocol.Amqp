@@ -63,7 +63,7 @@ public sealed class RabbitMqRoundTripE2ETests : IClassFixture<RabbitMqContainerF
         // the same broker container so the round-trip is fully wired
         // through the plugin's invoke + receive paths (not RabbitMQ
         // .Client direct).
-        var streamCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var streamCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         streamCts.CancelAfter(TimeSpan.FromSeconds(15));
 
         var streamTask = ReadFirstFrameAsync(

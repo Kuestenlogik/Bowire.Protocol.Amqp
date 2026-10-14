@@ -82,7 +82,7 @@ internal sealed record AmqpEndpoint(
         AmqpWire wire;
         bool tls;
         int defaultPort;
-        switch (uri.Scheme.ToLowerInvariant())
+        switch (uri.Scheme)   // Uri.Scheme is always lower case
         {
             case "amqp":   wire = AmqpWire.V091; tls = false; defaultPort = 5672; break;
             case "amqps":  wire = AmqpWire.V091; tls = true;  defaultPort = 5671; break;

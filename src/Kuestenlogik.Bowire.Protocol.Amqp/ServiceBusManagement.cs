@@ -185,7 +185,9 @@ internal static class ServiceBusManagement
         // and what HttpUtility.UrlEncode would have produced without
         // pulling System.Web in at plugin scope. Entity names address
         // case-insensitively, so the case carries no meaning here.
+#pragma warning disable CA1308 // the SAS string-to-sign is the lower-cased, escaped resource URI (see above); upper case would not verify.
         var encodedResource = Uri.EscapeDataString(resourceUri).ToLowerInvariant();
+#pragma warning restore CA1308
         using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(key));
         var signature = Convert.ToBase64String(hmac.ComputeHash(Encoding.UTF8.GetBytes(encodedResource + "\n" + expiry)));
         return "SharedAccessSignature sr=" + encodedResource

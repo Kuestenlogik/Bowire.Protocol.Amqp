@@ -163,9 +163,9 @@ public sealed class AmqpMockEmitterTests
     }
 
     [Fact]
-    public void CanEmit_NullRecording_Throws()
+    public async Task CanEmit_NullRecording_Throws()
     {
-        var emitter = new AmqpMockEmitter();
+        await using var emitter = new AmqpMockEmitter();
         Assert.Throws<ArgumentNullException>(() => emitter.CanEmit(null!));
     }
 

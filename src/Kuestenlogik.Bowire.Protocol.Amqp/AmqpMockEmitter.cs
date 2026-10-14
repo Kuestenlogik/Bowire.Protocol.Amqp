@@ -103,9 +103,12 @@ public sealed class AmqpMockEmitter : IBowireMockEmitter
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         _schedulerTask = Task.Run(() => RunAsync(steps, options, logger, _cts.Token), _cts.Token);
 
-        logger.LogInformation(
-            "amqp-emitter publishing → {Host}:{Port}{Vhost} (steps={Count})",
-            endpoint!.Host, endpoint.Port, endpoint.AddressOrVhost, steps.Count);
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation(
+                "amqp-emitter publishing → {Host}:{Port}{Vhost} (steps={Count})",
+                endpoint!.Host, endpoint.Port, endpoint.AddressOrVhost, steps.Count);
+        }
     }
 
     private static bool IsAmqp091Step(BowireRecordingStep s) =>
@@ -200,9 +203,12 @@ public sealed class AmqpMockEmitter : IBowireMockEmitter
                 body: payload,
                 cancellationToken: ct).ConfigureAwait(false);
             var payloadLength = payload.Length;
-            logger.LogInformation(
-                "amqp-emit(step={StepId}, exchange={Exchange}, routingKey={Key}, bytes={Bytes})",
-                step.Id, exchange, routingKey, payloadLength);
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                logger.LogInformation(
+                    "amqp-emit(step={StepId}, exchange={Exchange}, routingKey={Key}, bytes={Bytes})",
+                    step.Id, exchange, routingKey, payloadLength);
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

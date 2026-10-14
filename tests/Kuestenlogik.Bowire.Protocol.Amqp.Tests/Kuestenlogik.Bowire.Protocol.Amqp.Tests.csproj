@@ -3,13 +3,10 @@
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <!-- CA1707: xUnit-idiomatic test names use snake_case to read
-         as sentences (`Subject_action_expectedResult`). xUnit1030:
-         ConfigureAwait(false) clashes with xUnit's parallelization
-         model — its analyzers explicitly want it omitted in test
-         bodies. Both rules fight project-wide TreatWarningsAsErrors;
-         scoped suppression keeps the policy strict everywhere else. -->
-    <NoWarn>$(NoWarn);CA1707;xUnit1030;CA1054;CA1056;CA2000;CA1515</NoWarn>
+    <!-- CA1515: the container fixtures are injected into public xUnit test classes and must be public.
+         CA1054/CA1056: the URLs are [InlineData] theory arguments and fixture addresses handed to the
+         plugin's string-typed serverUrl API, so they stay strings. -->
+    <NoWarn>$(NoWarn);CA1515;CA1054;CA1056</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

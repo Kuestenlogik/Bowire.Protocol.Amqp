@@ -88,6 +88,6 @@ public sealed class BowireAmqpProtocolTests
                 showInternalServices: false, ct: ct).ConfigureAwait(false))
             {
             }
-        }).ConfigureAwait(false);
+        });
     }
 }

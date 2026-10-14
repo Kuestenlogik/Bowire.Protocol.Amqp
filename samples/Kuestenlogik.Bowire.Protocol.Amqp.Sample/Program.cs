@@ -84,9 +84,12 @@ _ = Task.Run(async () =>
             await channel.QueueBindAsync("harbor.cranes", ExchangeName, "crane.telemetry", cancellationToken: ct);
             await channel.QueueBindAsync("harbor.gates", ExchangeName, "gate.telemetry", cancellationToken: ct);
 
-            app.Logger.LogInformation(
-                "AMQP publisher connected to {Url}; emitting crane telemetry on '{Exchange}'.",
-                BrokerUrl, ExchangeName);
+            if (app.Logger.IsEnabled(LogLevel.Information))
+            {
+                app.Logger.LogInformation(
+                    "AMQP publisher connected to {Url}; emitting crane telemetry on '{Exchange}'.",
+                    BrokerUrl, ExchangeName);
+            }
 
             while (!ct.IsCancellationRequested)
             {
@@ -145,9 +148,12 @@ _ = Task.Run(async () =>
             var cranes = new Amqp10.SenderLink(session, "sample-cranes", $"{Address10}::{Address10}.cranes");
             var gates = new Amqp10.SenderLink(session, "sample-gates", $"{Address10}::{Address10}.gates");
             var fanout = new Amqp10.SenderLink(session, "sample-fanout", Address10);
-            app.Logger.LogInformation(
-                "AMQP 1.0 publisher connected to {Url}; emitting crane telemetry on '{Address}'.",
-                Broker10Url, Address10);
+            if (app.Logger.IsEnabled(LogLevel.Information))
+            {
+                app.Logger.LogInformation(
+                    "AMQP 1.0 publisher connected to {Url}; emitting crane telemetry on '{Address}'.",
+                    Broker10Url, Address10);
+            }
 
             while (!ct.IsCancellationRequested)
             {
