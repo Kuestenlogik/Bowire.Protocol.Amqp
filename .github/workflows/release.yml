@@ -12,6 +12,7 @@ env:
 permissions:
   contents: write
   packages: write
+  id-token: write  # Trusted Publishing: OIDC token exchanged for a one-hour nuget.org key
 
 jobs:
   release:
@@ -58,12 +59,18 @@ jobs:
         if: ${{ github.ref_type == 'tag' }}
         run: dotnet nuget push "artifacts/packages/*.nupkg" --source "https://nuget.pkg.github.com/Kuestenlogik/index.json" --api-key ${{ secrets.GITHUB_TOKEN }} --skip-duplicate
 
-      # nuget.org: only when the secret is configured. NUGET_API_KEY
-      # needs the 'Push new packages and package versions' scope.
+      # nuget.org, through Trusted Publishing (no stored key): the policy on
+      # nuget.org trusts this repository's release.yml.
+      # The temporary key lives one hour, so it is fetched right before the push.
+      - name: nuget.org login (OIDC → temporary API key)
+        if: ${{ github.ref_type == 'tag' && vars.NUGET_USER != '' }}
+        id: nuget-login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
+        with:
+          user: ${{ vars.NUGET_USER }}
+
       - name: Publish to nuget.org
-        if: ${{ github.ref_type == 'tag' && env.NUGET_API_KEY != '' }}
-        env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        if: ${{ github.ref_type == 'tag' && vars.NUGET_USER != '' }}
         # No separate .snupkg push — Directory.Build.props sets
         # DebugType=embedded so debug info ships inside the .nupkg
         # itself, and nuget.org's symbol-validation chain stays out
@@ -71,7 +78,7 @@ jobs:
         run: |
           dotnet nuget push "artifacts/packages/*.nupkg" \
             --source https://api.nuget.org/v3/index.json \
-            --api-key "$NUGET_API_KEY" \
+            --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" \
             --skip-duplicate
 
       - name: Create GitHub Release
